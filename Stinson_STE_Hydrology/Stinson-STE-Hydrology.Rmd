@@ -1,0 +1,332 @@
+---
+title: "Stinson-STE-Hydrology"
+author: "Jessica Bullington"
+date: "2024-05-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries}
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(GGally) 
+library(gridExtra)
+library(tidyr)
+```
+
+```{r load data}
+# compute timestamp using https://www.epochconverter.com and increment in excel (5min=300s)
+list.files()
+Feb_MW9_raw = read.csv("Green_MW9_220222-040322_date.csv")
+Feb_MW6_raw = read.csv("Red_MW6_220222-040322_date.csv")
+Feb_W1_raw = read.csv("Blue_W1_220222-040322_date.csv")
+Feb_W4_raw = read.csv("Yellow_W4_220222-280222_date.csv")
+
+Oct_W1_raw = read.csv("Yellow_W1_Oct_2022_date.csv")
+Oct_W2_raw = read.csv("Green_W2_Oct_2022_date.csv")
+Oct_W3_raw = read.csv("Red_W3_Oct_2022_date.csv")
+Oct_W4_raw = read.csv("Blue_W4_Oct_2022_date.csv")
+
+# NOAA tide data
+Feb_noaa = read.csv("Tide_9414958_Feb.csv")
+Oct_noaa = read.csv("Tide_9414958_Oct.csv")
+```
+
+```{r convert time stamp to date}
+#Sys.timezone() #America/Los_Angeles #PST8PDT
+Feb_MW9_raw$dateFull = as.POSIXct(Feb_MW9_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01")
+Feb_MW6_raw$dateFull = as.POSIXct(Feb_MW6_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01")
+Feb_W1_raw$dateFull = as.POSIXct(Feb_W1_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01") 
+Feb_W4_raw$dateFull = as.POSIXct(Feb_W4_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01") 
+
+Oct_W1_raw$dateFull = as.POSIXct(Oct_W1_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01")
+Oct_W2_raw$dateFull = as.POSIXct(Oct_W2_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01")
+Oct_W3_raw$dateFull = as.POSIXct(Oct_W3_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01") 
+Oct_W4_raw$dateFull = as.POSIXct(Oct_W4_raw$ts, tz = "America/Los_Angeles", origin="1970-01-01") 
+
+Feb_noaa$dateFull = as.POSIXct(Feb_noaa$Timestamp, tz = "America/Los_Angeles", origin="1970-01-01") 
+Oct_noaa$dateFull = as.POSIXct(Oct_noaa$Timestamp, tz = "America/Los_Angeles", origin="1970-01-01") 
+
+```
+
+```{r raw plot}
+ggplot(Feb_MW9_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+ggplot(Feb_MW6_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+ggplot(Feb_W1_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+ggplot(Feb_W4_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+
+ggplot(Oct_W1_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+ggplot(Oct_W2_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+ggplot(Oct_W3_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+ggplot(Oct_W4_raw, aes(dateFull, height_m)) + geom_point(pch=20) + theme_bw()
+
+ggplot(Feb_noaa, aes(dateFull, Pred)) + geom_point(pch=20) + theme_bw()
+ggplot(Oct_noaa, aes(dateFull, Pred)) + geom_point(pch=20) + theme_bw()
+```
+
+```{r elevation corrections}
+# subtract air pressure
+Feb_MW9_raw$height_air = mean(Feb_MW9_raw$height_m[1:5])
+Feb_MW6_raw$height_air = mean(Feb_MW6_raw$height_m[1:5])
+Feb_W1_raw$height_air = mean(Feb_W1_raw$height_m[1:5])
+Feb_W4_raw$height_air = mean(Feb_W4_raw$height_m[1:5])
+
+Oct_W1_raw$height_air = mean(Oct_W1_raw$height_m[1:5])
+Oct_W2_raw$height_air = mean(Oct_W2_raw$height_m[1:5])
+Oct_W3_raw$height_air = mean(Oct_W3_raw$height_m[1:5])
+Oct_W4_raw$height_air = mean(Oct_W4_raw$height_m[(nrow(Oct_W4_raw)-5):nrow(Oct_W4_raw)])
+
+# standardize to MSL 
+Feb_MW9_raw$height_real = Feb_MW9_raw$height_m - Feb_MW9_raw$height_air - 3.075177995 # deeper than MSL so subtract
+Feb_MW6_raw$height_real = Feb_MW6_raw$height_m - Feb_MW6_raw$height_air + 0.432054 # shallower than MSL so add
+Feb_W1_raw$height_real = Feb_W1_raw$height_m - Feb_W1_raw$height_air - 0.2988945
+Feb_W4_raw$height_real = Feb_W4_raw$height_m - Feb_W4_raw$height_air + 0.079248
+  
+Oct_W1_raw$height_real = Oct_W1_raw$height_m - Oct_W1_raw$height_air - 0.19812
+Oct_W2_raw$height_real = Oct_W2_raw$height_m - Oct_W2_raw$height_air - 0.295656
+Oct_W3_raw$height_real = Oct_W3_raw$height_m - Oct_W3_raw$height_air - 0.27432
+Oct_W4_raw$height_real = Oct_W4_raw$height_m - Oct_W4_raw$height_air - 0.088392
+
+# trim to deployment period (manually look for where to trim)
+Feb_MW9 = subset(Feb_MW9_raw, Feb_MW9_raw$ts > 1645584776 & Feb_MW9_raw$ts < 1646417576)
+Feb_MW6 = subset(Feb_MW6_raw, Feb_MW6_raw$ts > 1645643530 & Feb_MW6_raw$ts < 1646418130)
+Feb_W1 = subset(Feb_W1_raw, Feb_W1_raw$ts > 1645584513 & Feb_W1_raw$ts < 1646414313)
+Feb_W4 = subset(Feb_W4_raw, Feb_W4_raw$ts > 1645584030 & Feb_W4_raw$ts < 1646093130)
+
+Oct_W1 = subset(Oct_W1_raw, Oct_W1_raw$ts > 1665367080 & Oct_W1_raw$ts < 1666121580)
+Oct_W2 = subset(Oct_W2_raw, Oct_W2_raw$ts > 1665366480 & Oct_W2_raw$ts < 1666121820)
+Oct_W3 = subset(Oct_W3_raw, Oct_W3_raw$ts > 1665364920 & Oct_W3_raw$ts < 1666122180)
+Oct_W4 = subset(Oct_W4_raw, Oct_W4_raw$ts < 1666122660)
+
+# check for disturbances
+ggplot(Feb_MW9, aes(dateFull, height_real)) + geom_point(pch=20) + theme_bw() # disturbed
+ggplot(Feb_MW6, aes(dateFull, height_real)) + geom_point(pch=20) + theme_bw() # disturbed
+ggplot(Feb_W1, aes(dateFull, height_real)) + geom_line() + theme_bw()
+ggplot(Feb_W4, aes(dateFull, height_real)) + geom_line() + theme_bw()
+
+ggplot(Oct_W1, aes(dateFull, height_real)) + geom_line() + theme_bw()
+ggplot(Oct_W2, aes(dateFull, height_real)) + geom_line() + theme_bw()
+ggplot(Oct_W3, aes(dateFull, height_real)) + geom_line() + theme_bw()
+ggplot(Oct_W4, aes(dateFull, height_real)) + geom_line() + theme_bw()
+
+# adjust for disturbances
+Feb_MW9 = subset(Feb_MW9, Feb_MW9$height_real > 0.5)
+ggplot(Feb_MW9, aes(dateFull, height_real)) + geom_point(pch=20) + theme_bw() # could be better
+
+remove = c(1646159830,1646160130,1646160430,1646160730,1646161030,1646161330,1646161630,1646161930,1646162230,1646162530,1646162830,1646163130) # for MW6
+Feb_MW6 = subset(Feb_MW6, !(Feb_MW6$ts %in% remove)) 
+ggplot(Feb_MW6, aes(dateFull, height_real)) + geom_point(pch=20) + theme_bw() # good
+
+```
+
+```{r combine data}
+# add location variable
+Feb_W1$Location <- "Well 1"
+Feb_W4$Location <- "Well 4"
+Feb_MW9$Location <- "MW9"
+Feb_MW6$Location <- "MW6"
+
+Oct_W1$Location <- "Well 1"
+Oct_W2$Location <- "W2"
+Oct_W3$Location <- "W3"
+Oct_W4$Location <- "Well 4"
+
+# combine to one file for each campaign
+Feb <- rbind.data.frame(Feb_W1, Feb_W4)
+Oct <- rbind.data.frame(Oct_W1, Oct_W2, Oct_W3, Oct_W4)
+Oct <- rbind.data.frame(Oct_W1, Oct_W4) # NOTE: comment out to use all 4 wells!!
+
+```
+
+
+```{r combine with tide data}
+
+Feb_noaa_mod = data.frame(Date = Feb_noaa$Date, Time = Feb_noaa$Time, ts = Feb_noaa$Timestamp, ms = NA, height_m = Feb_noaa$Pred, temp_C = NA, dateFull = Feb_noaa$dateFull,  height_air = NA, height_real = Feb_noaa$Pred)
+Feb_noaa_mod2 = subset(Feb_noaa_mod, ts > min(Feb_W1$ts) & ts < max(Feb_W1$ts))
+Feb_noaa_mod2$Location = "NOAA"
+
+Feb_tide = rbind.data.frame( Feb_noaa_mod2, Feb)
+
+Oct_noaa_mod = data.frame(Date = Oct_noaa$Date, Time = Oct_noaa$Time, ts = Oct_noaa$Timestamp, ms = NA, height_m = Oct_noaa$Pred, temp_C = NA, dateFull = Oct_noaa$dateFull,  height_air = NA, height_real = Oct_noaa$Pred)
+Oct_noaa_mod2 = subset(Oct_noaa_mod, ts > min(Oct_W1$ts) & ts < max(Oct_W1$ts))
+Oct_noaa_mod2$Location = "NOAA"
+
+Oct_tide = rbind.data.frame( Oct_noaa_mod2,Oct)
+
+```
+
+
+```{r gradient analysis}
+# Feb frequency is 5 min, Oct is 1 min
+
+#### February
+
+Feb_W1_trim = subset(Feb_W1, ts < 1646093013)
+Feb_W4_trim = subset(Feb_W4, ts > 1645584630)
+
+Feb_col = cbind(Feb_W1_trim, Feb_W4_trim)
+colnames(Feb_col) <- c("Date_W1", "Time_W1" , "ts_W1", "ms_W1", "height_m_W1","temp_C_W1","dateFull_W1", "height_air_W1", "height_real_W1", "Location_W1", "Date_W4",  "Time_W4", "ts_W4", "ms_W4", "height_m_W4","temp_C_W4", "dateFull_W4", "height_air_W4" , "height_real_W4", "Location_W4"   )
+
+Feb_col$diff = Feb_col$height_real_W1 - Feb_col$height_real_W4
+Feb_col$distance = 16.663
+Feb_col$diff.dist = (Feb_col$diff)/16.663
+Feb_col$direction = ifelse(Feb_col$diff > 0, "Oceanward", "Landward")
+
+# plot difference over time
+
+ggplot(Feb_col, aes(diff.dist, ts_W1, col=direction))+
+    geom_point() + 
+    scale_y_reverse(breaks = c(1645603200, 1645689600, 1645776000, 1645862400, 1645948800, 1646035200, 1646121600, 1646208000, 1646294400), 
+                    labels=c("23 Feb 2022",  "24 Feb 2022", "25 Feb 2022", "26 Feb 2022", "27 Feb 2022", "28 Feb 2022", "01 Mar 2022", "02 Mar 2022",  "03 Mar 2022"), limits = c( 1646337600, min(Feb_col$ts_W1)))+
+    scale_x_continuous(limits = c(min(Feb_col$diff.dist), max(Feb_col$diff.dist)))+
+    scale_color_manual(values =  c("#5DC863FF", "#31688EFF")) + 
+    labs(x="\nWater Height Gradient (∆h/∆x)", y="", fill = "Flow Direction")+
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+    guides(color = guide_legend(title = "Flow Direction")) 
+
+ggsave("Stinson_water_Feb_gradient_2024.04.13.png", 
+       plot = last_plot(),
+       device = "png", units = "cm", width = 12, height = 10, dpi = 300)
+
+ggplot(Feb_col, aes(diff, ts_W1, col=direction))+
+    geom_point() + 
+    scale_y_reverse(breaks = c(1645603200, 1645689600, 1645776000, 1645862400, 1645948800, 1646035200), 
+                    labels=c("23 Feb 2022",  "24 Feb 2022", "25 Feb 2022", "26 Feb 2022", "27 Feb 2022", "28 Feb 2022")) +
+    scale_color_manual(values =  c("#5DC863FF", "#31688EFF")) + 
+    labs(x="\nWater Height Difference W1-W4 (∆h)", y="", fill = "Flow Direction")+
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+    guides(color = guide_legend(title = "Flow Direction")) 
+
+ggsave(filename =  "Stinson_water_Feb_diff_2024.04.13.png", 
+       plot = last_plot(),
+       device = "png", units = "cm", width = 12, height = 10, dpi = 300)
+
+Feb_red = select(Feb_col, dateFull_W1, Date_W1, Time_W1,  ts_W1, height_real_W1, height_real_W4, diff, distance, diff.dist, direction)
+
+colnames(Feb_red) <- c("DateFull", "Date", "Time", "TimeStamp", "Height_m_W1", "Height_m_W4", "Difference_m", "Distance_m", "Gradient", "Direction")
+
+write.csv(Feb_red, "Stinson_water_feb_gradient_2024.04.13.csv", row.names = FALSE)
+
+
+##### October
+
+Oct_W1_trim = Oct_W1
+Oct_W4_trim = subset(Oct_W4, ts > 1665367080 & ts < 1666121580)
+
+Oct_col = cbind(Oct_W1_trim, Oct_W4_trim)
+colnames(Oct_col) <- c("Date_W1", "Time_W1" , "ts_W1", "ms_W1", "height_m_W1","temp_C_W1","dateFull_W1", "height_air_W1", "height_real_W1", "Location_W1", "Date_W4",  "Time_W4", "ts_W4", "ms_W4", "height_m_W4","temp_C_W4", "dateFull_W4", "height_air_W4" , "height_real_W4", "Location_W4")
+
+Oct_col$diff = Oct_col$height_real_W1 - Oct_col$height_real_W4
+Oct_col$distance = 19.684
+Oct_col$diff.dist = (Oct_col$diff)/19.684
+Oct_col$direction = ifelse(Oct_col$diff > 0, "Oceanward", "Landward")
+
+# plot difference over time
+
+ggplot(Oct_col, aes(diff.dist, ts_W1, col=direction))+
+    geom_point() + 
+    scale_y_reverse(breaks = c(1665385200, 1665471600, 1665558000, 1665644400, 1665730800, 1665817200, 1665903600, 1665990000, 1666076400), 
+                    labels=c("10 Oct 2022",  "11 Oct 2022", "12 Oct 2022", "13 Oct 2022", "14 Oct 2022", "15 Oct 2022", "16 Oct 2022", "17 Oct 2022", "18 Oct 2022")) +
+    scale_color_manual(values =  c("#5DC863FF", "#31688EFF")) + 
+    labs(x="\nWater Height Gradient W1-W4 (∆h/∆x)", y="", fill = "Flow Direction")+
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+    guides(color = guide_legend(title = "Flow Direction"))
+
+ggsave("Stinson_water_Oct_gradient_2024.04.13.png", 
+       plot = last_plot(),
+       device = "png", units = "cm", width = 12, height = 10, dpi = 300)
+
+ggplot(Oct_col, aes(diff.dist, ts_W1, col=direction))+
+    geom_point() + 
+    scale_y_reverse(breaks = c(1665385200, 1665471600, 1665558000, 1665644400, 1665730800, 1665817200, 1665903600, 1665990000, 1666076400), 
+                    labels=c("10 Oct 2022",  "11 Oct 2022", "12 Oct 2022", "13 Oct 2022", "14 Oct 2022", "15 Oct 2022", "16 Oct 2022", "17 Oct 2022", "18 Oct 2022")) +
+    scale_x_continuous(limits = c(min(Feb_col$diff.dist), max(Feb_col$diff.dist)))+
+    scale_color_manual(values =  c("#5DC863FF", "#31688EFF")) + 
+    labs(x="\nWater Height Gradient (∆h/∆x)", y="", fill = "Flow Direction")+
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+    guides(color = guide_legend(title = "Flow Direction"))
+
+ggsave("Stinson_water_Oct_gradient_scaled_2024.04.13.png", 
+       plot = last_plot(),
+       device = "png", units = "cm", width = 12, height = 10, dpi = 300)
+
+ggplot(Oct_col, aes(diff, ts_W1, col=direction))+
+    geom_point() + 
+    scale_y_reverse(breaks = c(1665385200, 1665471600, 1665558000, 1665644400, 1665730800, 1665817200, 1665903600, 1665990000, 1666076400), 
+                    labels=c("10 Oct 2022",  "11 Oct 2022", "12 Oct 2022", "13 Oct 2022", "14 Oct 2022", "15 Oct 2022", "16 Oct 2022", "17 Oct 2022", "18 Oct 2022")) +
+    scale_color_manual(values =  c("#5DC863FF", "#31688EFF")) + 
+    labs(x="\nWater Height Difference W1-W4 (∆h)", y="", fill = "Flow Direction")+
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+    guides(color = guide_legend(title = "Flow Direction"))
+
+ggsave(filename =  "Stinson_water_Oct_diff_2024.04.13.png", 
+       plot = last_plot(),
+       device = "png", units = "cm", width = 12, height = 10, dpi = 300)
+
+Oct_red = select(Oct_col, dateFull_W1, Date_W1, Time_W1,  ts_W1, height_real_W1, height_real_W4, diff, distance, diff.dist, direction)
+
+colnames(Oct_red) <- c("DateFull", "Date", "Time", "TimeStamp", "Height_m_W1", "Height_m_W4", "Difference_m", "Distance_m", "Gradient", "Direction")
+
+write.csv(Oct_red, "Stinson_water_oct_gradient_2024.04.13.csv", row.names = FALSE)
+
+
+```
+
+```{r simple plot with NOAA tide}
+# February
+min(Feb_tide$height_real)
+max(Feb_tide$height_real)
+
+Feb_tide2 = subset(Feb_tide, ts < 1646337600)
+
+Feb_tide2$Location = as.factor(Feb_tide2$Location)
+Feb_tide2$Location = factor(Feb_tide2$Location, levels = c("NOAA", "Well 1", "Well 4"))
+
+ggplot(Feb_tide2, aes(dateFull, height_real, col=Location))+
+    geom_line(linewidth = 1) + # have to define first and then overlay again
+   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+    #geom_vline(xintercept = as.numeric(sampled_Feb$dateFull), col = "grey")+
+    scale_color_manual(values =  c("#999999","#5DC863FF", "#31688EFF" )) + # "gold"
+    labs(x="", y="\nWater Height (m to MSL)\n")+
+    scale_y_continuous(breaks=seq(-0.5,1.5,by=0.5), lim = c(-0.85,1.6)) +
+    geom_line() +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank(), legend.title = element_blank())
+
+ggsave("Stinson_water_Feb_grey_2024.06.19.png",
+       plot = last_plot(),
+       device = "png", units = "cm", width = 12, height = 10, dpi = 300)
+
+# October
+min(Oct_tide$height_real)
+max(Oct_tide$height_real)
+
+Oct_tide$Location = as.factor(Oct_tide$Location)
+Oct_tide$Location = factor(Oct_tide$Location, levels = c( "NOAA", "Well 1", "Well 4"))
+
+ggplot(Oct_tide, aes(dateFull, height_real, col=Location))+
+    geom_line(linewidth = 1) + # have to define first and then overlay again
+   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+    #geom_vline(xintercept = as.numeric(sampled_Feb$dateFull), col = "grey")+
+    scale_color_manual(values =  c("#999999","#5DC863FF", "#31688EFF" )) + # "gold"
+    labs(x="", y="\nWater Height (m to MSL)\n")+
+    scale_y_continuous(breaks=seq(-0.5,1.5,by=0.5), lim = c(-0.85,1.6)) +
+    geom_line() +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank(), legend.title = element_blank())
+
+ggsave("Stinson_water_Oct_grey_2024.06.19.png",
+       plot = last_plot(),
+       device = "png", units = "cm", width = 12, height = 10, dpi = 300)
+
+```
+

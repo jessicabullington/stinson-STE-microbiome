@@ -1,0 +1,718 @@
+---
+title: "Stinson Phyloseq - Analysis of Illumina MiSeq (PE250) data"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+# STEP 0: Installations
+
+```{r}
+# getwd()
+dirPath <- "/scratch/users/klangenf/"
+
+dir.create(paste0(dirPath, "Stinson_2022_16S_Analysis"))
+```
+
+## Install required R packages and 16S training set
+
+```{r}
+# Install BiocManager if missing
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(version = "3.14") # specify BiocManager v.3.15
+
+# Install Bioconductor packages
+BiocManager::install("dada2", version = "3.15") # (v.1.22.0)
+BiocManager::install("phyloseq", version = "3.15") # (v.1.38.0) # install using devtools::install_github("joey711/phyloseq")
+
+BiocManager::install("ShortRead", version = "3.15") # (v.1.52.0)
+BiocManager::install("DECIPHER", version = "3.15")
+
+# Install CRAN packages
+install.packages("ggplot2") # (v.3.3.5)
+install.packages("Hmisc")  # (v.4.6-0)
+install.packages("seqRFLP") # (v.1.0.1)
+install.packages("dplyr") # (v.1.0.7)
+install.packages("tidyr") # (v.1.1.4)
+install.packages("phangorn")
+```
+
+
+```{bash}
+# Set path to our ESS210_2021_sequencing directory
+DIRPATH=$(echo "/scratch/users/klangenf/Stinson_2022_16S_Analysis")
+#DIRPATH=$(echo "SET_PATH_TO_ESS210_2021_sequencing")
+
+# Make directory for SILVA 
+eval cd $DIRPATH
+mkdir ./SILVA && cd "$_"
+
+# Download SILVA 
+wget -O silva_nr99_v138.1_train_set.fa.gz https://zenodo.org/record/4587955/files/silva_nr99_v138.1_train_set.fa.gz?download=1
+```
+
+
+# STEP 1: DADA2
+
+```{r}
+library(dada2)
+library(ShortRead)
+library(ggplot2)
+library(phyloseq)
+library(Hmisc)
+#library(seqRFLP)
+library(dplyr)
+library(tidyr)
+library(DECIPHER)
+library(phangorn)
+```
+
+## Trim and quality filter
+
+```{r}
+# Set path 
+dirPath <- "/scratch/groups/caf"
+
+# Forward and reverse fastq filenames have format: SAMPLENAME_L001_R1_TRIMMED.fastq and SAMPLENAME_L001_R2_TRIMMED.fastq
+fnFs <- sort(list.files(paste0(dirPath, "/Stinson_all_fastq_trimmed/"), pattern = "_R1_ptrim.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(paste0(dirPath, "/Stinson_all_fastq_trimmed/"), pattern = "_R2_ptrim.fastq.gz", full.names = TRUE))
+
+# Extract sample names, assuming filenames have format: SAMPLENAME_BJK_XXX.fastq
+sample_names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+
+sample_names
+```
+
+
+```{r}
+# List samples to inspect 
+q_check <- c("010322-H-W2D1", "Sand-W1-4A", "KMC68") %>%
+  lapply(., grep, fnFs) %>%
+  unlist
+
+# Plot quality scores
+plotQualityProfile(fnFs[q_check])
+ggsave("figures/QualityProfileF.png", plot = last_plot())
+plotQualityProfile(fnRs[q_check])
+ggsave("figures/QualityProfileR.png", plot = last_plot())
+```
+
+
+```{r}
+# Create directory for filtered reads
+dirPath <- "/scratch/users/klangenf/Stinson_2022_16S_Analysis/"
+dir.create(paste0(dirPath, "/filtered"))
+
+# Set path for future filtered files
+filtFs <- file.path(dirPath, "filtered", paste0(sample_names, "_F_filt.fastq.gz"))
+filtRs <- file.path(dirPath, "filtered", paste0(sample_names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample_names
+names(filtRs) <- sample_names
+```
+
+
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen = c(240,200),
+              maxN = 0, maxEE = c(2,2), truncQ = 2, rm.phix = TRUE,
+              compress = TRUE, multithread = FALSE) # On Windows set multithread=FALSE
+```
+
+
+## Model error rates
+
+```{r}
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+```
+
+```{r}
+errF <- learnErrors(derepFs, multithread = TRUE)
+errR <- learnErrors(derepRs, multithread = TRUE)
+```
+
+```{r}
+plotErrors(errF, nominalQ = TRUE)
+ggsave("figures/errorF_visualization.png", plot = last_plot())
+plotErrors(errR, nominalQ = TRUE)
+ggsave("figures/errorR_visualization.png", plot = last_plot())
+```
+
+## Save the dereplicated reads and modeled error rates
+```{r}
+dir.create(paste0(dirPath, "/robjects"))
+
+saveRDS(derepFs, paste0(dirPath, "/robjects", "/derepFs_Stinson_all.rds"))
+saveRDS(derepRs, paste0(dirPath, "/robjects", "/derepRs_Stinson_all.rds"))
+
+saveRDS(errF, paste0(dirPath, "/robjects", "/errF_Stinson_all.rds"))
+saveRDS(errR, paste0(dirPath, "/robjects", "/errR_Stinson_all.rds"))
+```
+
+## Construct and filter ASV table
+
+```{r}
+# Set path to ESS210_2021_sequencing folder
+dirPath <- "/scratch/groups/caf" 
+
+# Forward and reverse fastq filenames have format: SAMPLENAME_L001_R1_TRIMMED.fastq and SAMPLENAME_L001_R2_TRIMMED.fastq
+fnFs <- sort(list.files(paste0(dirPath, "/Stinson_Oct22_16S/"), pattern = "_R1_001.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(paste0(dirPath, "/Stinson_Oct22_16S/"), pattern = "_R2_001.fastq.gz", full.names = TRUE))
+
+# Extract sample names, assuming filenames have format: SAMPLENAME_BJK_XXX.fastq
+sample_names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+
+# Load filtered file names
+dirPath <- "/scratch/users/klangenf/Stinson_2022_16S_Analysis/"
+filtFs <- file.path(dirPath, "filtered", paste0(sample_names, "_F_filt.fastq.gz"))
+filtRs <- file.path(dirPath, "filtered", paste0(sample_names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample_names
+names(filtRs) <- sample_names
+
+# Load in derep and err objects
+derepFs <- readRDS(file = paste0(dirPath, "/robjects", "/derepFs_Stinson_all.rds"))
+derepRs <- readRDS(file = paste0(dirPath, "/robjects", "/derepRs_Stinson_all.rds"))
+errF <- readRDS(file = paste0(dirPath, "/robjects", "/errF_Stinson_all.rds"))
+errR <- readRDS(file = paste0(dirPath, "/robjects", "/errR_Stinson_all.rds"))
+```
+
+```{r}
+dadaFs <- dada(derepFs, err = errF, multithread = TRUE, pool = TRUE)
+dadaRs <- dada(derepRs, err = errR, multithread = TRUE, pool = TRUE)
+```
+
+## save objects
+```{r}
+#saveRDS(dadaFs, paste0(dirPath, "/robjects", "/dadaFs_Stinson_all.rds"))
+#saveRDS(dadaRs, paste0(dirPath, "/robjects", "/dadaRs_Stinson_all.rds"))
+```
+
+```{r}
+dadaFs <- readRDS(file = paste0(dirPath, "/robjects", "/dadaFs_Stinson_all.rds"))
+dadaRs <- readRDS(file = paste0(dirPath, "/robjects", "/dadaRs_Stinson_all.rds"))
+```
+
+```{r}
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=FALSE)
+
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+```
+
+```{r}
+seqtab <- makeSequenceTable(mergers)
+
+# Inspect ASV table dimensions
+dim(seqtab)
+```
+
+```{r}
+#saveRDS(seqtab, paste0(dirPath, "/robjects", "/seqtab_Stinson_all.rds"))
+```
+
+```{r}
+seqtab <- readRDS(paste0(dirPath, "/robjects", "/seqtab_Stinson_all.rds"))
+```
+
+
+```{r}
+table(nchar(getSequences(seqtab)))
+```
+
+
+```{r}
+seqtab_length_filt <- seqtab[,nchar(colnames(seqtab)) %in% seq(250,260)] # V4 only
+table(nchar(getSequences(seqtab_length_filt)))
+```
+
+```{r}
+# Remove chimeras
+seqtab_nochim <- removeBimeraDenovo(seqtab_length_filt, method = "consensus", multithread = TRUE, verbose = TRUE)
+
+# Inspect filtered ASV table dimensions
+dim(seqtab_nochim)
+
+# Report proportion of reads passing chimera filtering
+sum(seqtab_nochim)/sum(seqtab)
+```
+
+```{r}
+# Define function to return the number of unique reads/sequences
+getN <- function(x) sum(getUniques(x))
+
+# Apply function to output from each step and store in matrix
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab_nochim))
+
+# Rename column names to step names and row names to sample names
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample_names
+
+# View the matrix
+View(arrange(data.frame(track), -input))
+```
+
+
+## Assign taxonomy
+
+```{r}
+# Specify path to SILVA training set
+silvaPath <- paste0(dirPath, "/SILVA")
+
+# Assign taxonomy
+taxa <- assignTaxonomy(seqtab_nochim, paste0(silvaPath, "/silva_nr99_v138.1_train_set.fa.gz"), multithread=TRUE)
+```
+
+
+```{r}
+saveRDS(seqtab_nochim, paste0(dirPath, "/robjects", "/seqtab_nochim_Stinson_Feb22.rds"))
+saveRDS(taxa, paste0(dirPath, "/robjects", "/taxa_Stinson_Feb22.rds"))
+```
+
+## Construct Phylogenetic Tree
+
+```{r}
+sequences <- getSequences(seqtab_nochim)
+names(sequences) <- sequences
+# run sequence alignment (MSA) using DECIPHER
+alignment <- AlignSeqs(DNAStringSet(sequences), anchor = NA)
+# change sequence alignment output into a phyDat structure
+phang.align <- phyDat(as(alignment, "matrix"), type = "DNA")
+# create distance matrix
+dm <- dist.ml(phang.align)
+saveRDS(dm, paste0(dirPath, "robjects/dist_matrix_tree.rds"))
+
+# perform neighbor joining
+treeNJ <- NJ(dm)
+saveRDS(treeNJ, paste0(dirPath, "robjects/treeNJ_tree.rds"))
+
+# internal maximum likelihood
+fit = pml(treeNJ, data = phang.align)
+saveRDS(fit, paste0(dirPath, "robjects/fit_tree.rds"))
+
+# change negative edges length to 0
+fitGTR <- update(fit, k=4, inv=0.2)
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma = TRUE, rearragement = "stochastic", control = pml.control(trace=0))
+saveRDS(fitGTR, paste0(dirPath, "robjects/fitGTR_tree.rds"))
+```
+
+
+# STEP 2: phyloseq
+
+## Build phyloseq object
+
+```{r}
+# Set path to ESS210_2021_sequencing folder
+dirPath <- "/scratch/users/klangenf/Stinson_2022_16S_Analysis" # CHANGE ME
+
+# Import seqtab_nochim if necessary
+seqtab_nochim <- readRDS(file = paste0(dirPath, "/robjects", "/seqtab_nochim_Stinson_all.rds"))
+taxa <- readRDS(file = paste0(dirPath, "/robjects", "/taxa_Stinson_all.rds"))
+###fitGTR <- readRDS(file = paste0(dirPath, "/robjects", "/fitGTR_tree.rds"))
+
+# Import sample metadata
+sample_metadata <- read.delim(file = paste0(dirPath, "/Stinson_16S_all_metadata2.txt"),
+                         header = TRUE,
+                         row.names = 1)
+sample_metadata <- sample_metadata[2:nrow(sample_metadata), ]
+
+# Format ASV table for otu_table class
+seqtab_asv <- seqtab_nochim
+colnames(seqtab_asv) <- paste("ASV", 1:ncol(seqtab_asv), sep = ".")
+
+# Format sequences for refseq class
+asv_seqs <- colnames(seqtab_nochim) %>%
+  DNAStringSet()
+names(asv_seqs) <- paste("ASV", 1:length(asv_seqs), sep = ".")
+
+# Format taxonomy table for tax_table class
+rownames(taxa) <- colnames(seqtab_asv)
+
+# Format sample metadata for sample_data class
+formatted_metadata <- sample_metadata #%>%
+  #separate(type, c("class", "sample",  "nucleic_acid", "replicate", "lab_pair"))
+
+# Inspect metadata object
+head(formatted_metadata)
+```
+
+```{r}
+seqs <- as.data.frame(getSequences(seqtab_nochim))
+seqs$names <- getSequences(seqtab_asv)
+colnames(seqs) <- c("seqs", "names")
+
+#labels <- lapply(TREE$tip.label, FUN = function(x) {seqs$names[seqs$seqs == x]})
+#TREE$tip.label <- labels
+```
+
+
+```{r}
+ps <- phyloseq(otu_table(seqtab_asv, taxa_are_rows = FALSE),  
+               tax_table(taxa),
+               refseq(asv_seqs),
+               sample_data(formatted_metadata))#,
+               #phy_tree(TREE))
+
+ps
+```
+
+
+```{r}
+saveRDS(ps, paste0(dirPath, "/robjects","/ps_Stinson_all_notree.rds"))
+```
+
+
+
+# STEP 3: Run Decontam
+Metadata table needs to have a quant_reading column and Sample_or_Control column
+```{r}
+temp <- data.frame(sample_data(ps))
+sample_data(ps)$quant_reading <- c(3.5, 2.0925, 2.31, 2.3475, 1.8975, 2.06, 4.3425, 0.445, 1.95, 2.0175, 0.953, 2.385, 1.255, 0.457, 0.563, 0.439, 1.96, 2.0125, 1.465, 1.34, 2.44, 1.96, 0.893, 1.925, 2.09, 1.68, 2.605, 2.5, 2.725, 0.429, 0.49, 0.01, 2.22, 2.815, 1.76, 1.45, 2.155, 1.6275, 1.92, 2.69, 1.36, 1.2, 2.295, 1.665, 1.83, 0.464, 0.357, 0.01, 1.605, 2.2425, 0.61, 1.56, 1.8925, 1.065, 0.862, 2.325, 1.1, 1.505, 1.918, 1.9275, 0.446, 0.274, 0.01, 2.335, 0.799, 2.03, 1.81, 1.06, 0.421, 2.26, 2.4, 0.343, 0.431, 1.03, 0.95, 1.04, 1.8, 1.465, 2.04, 1.74, 0.01, 2.14, 0.523, 1.83, 0.961, 0.297, 1.08, 1.01, 1.01, 0.25, 0.759, 1.505, 2.12, 1.33, 1.5, 1.51, 2.16, 0.692, 0.01, 0.01, 0.01, 2.28, 0.428, 1.53, 0.958, 1.13, 0.83, 2.12, 0.868, 0.538, 0.702, 0.973, 1.83, 1.82, 1.1, 2.26, 1.335, 1.51, 0.01, 2.18, 1.59, 3.99, 3.99, 2.855, 2.14, 1.665, 1.6575, 1.535, 0.509, 1.27, 1.63, 2.175, 1.7, 2.05, 2.415, 1.848, 1.848, 2.2225, 1.36, 1.03, 1.51, 0.988, 2, 0.09, 2.52, 1.95, 1.265, 1.956, 1.825, 2.335, 1.57, 1.485, 2.5275, 1.54, 1.86, 1.41, 2.75, 2.78, 1.9725, 1.92, 1.295, 2.46, 2.8875, 2.94, 0.01, 1.665, 1.17, 0.716, 1.8475, 1.845, 1.86, 1.42, 3.1, 2, 1.96, 3.27, 2.69, 1.665, 2.35, 1.815, 3.305, 1.67, 1.03, 1.5975, 2.615, 2.45, 1.78, 2.995, 2.7075, 1.4, 2.595, 2.71, 1.89, 1.77, 1.89, 2.16, 1.13, 0.595, 0.01, 0.01, 1.39, 1.39, 2.27, 1.63, 1.91, 0.449, 1.72, 1.3, 1.59, 1.09, 1.4625, 1.69, 1.72, 1.14, 0.667, 0.989, 0.077, 0.451, 1.96, 0.01, 0.252, 1.58, 0.497, 1.25, 1.97, 0.96, 1.874, 0.302, 0.434, 0.396, 0.155, 0.235, 0.48, 0.808, 0.533, 0.433, 0.16, 0.406, 0.418, 0.446, 1.47, 0.841, 2.275, 1.655, 2.365, 1.3, 1.34, 1.73, 0.598, 1.27, 0.536, 1.82, 1.53, 2.335, 1.515, 2.36, 2.36, 0.941, 0.701, 1.49, 2.635, 2.29, 1.4675, 1.96, 0.557, 1.23, 1.5, 2.68, 3.9, 3.4, 3.54, 3.62, 3.72, 0.01, 2.05, 2.04, 1.57, 2.445, 1.535, 1.3, 1.31, 1.68, 1.94, 1.23, 0.01, 0.00001, 0.00001, 0.00001, 0.00001, 1, 1, 1, 1)
+sample_data(ps)$Sample_or_Control <- c(rep("True Sample", 31), "Control Sample", rep("True Sample", 66), rep("Control Sample", 2), rep("True Sample", 18), "Control Sample", rep("True Sample", 79), rep("Control Sample", 2), rep("True Sample", 73), "Control Sample", rep("True Sample", 10), rep("Control Sample", 5), rep("True Sample", 4))
+#sample_data(ps)$quant_reading <- as.numeric(sample_data(ps)$quant_reading)
+```
+
+```{r}
+df <- as.data.frame(sample_data(ps)) # Put sample_data into a ggplot-friendly data.frame
+df$LibrarySize <- sample_sums(ps)
+df <- df[order(df$LibrarySize),]
+df$Index <- seq(nrow(df))
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=Sample_or_Control)) + geom_point() + pretty_plot
+
+ggsave("figures/library_sizes.png", plot=last_plot())
+```
+
+```{r}
+contamdf.freq <- isContaminant(ps, method="frequency", conc="quant_reading")
+head(contamdf.freq)
+```
+
+```{r}
+### How many ASVs are classified as a contaminate?
+table(contamdf.freq$contaminant)
+### How abundant are the contaminate ASVs? List of their abundance ranking
+head(which(contamdf.freq$contaminant))
+```
+
+```{r}
+plot_frequency(ps, taxa_names(ps)[c(1, 61, 63, 66)], conc="quant_reading") + 
+  xlab("DNA Concentration (PicoGreen fluorescent intensity)") + pretty_plot
+
+ggsave("figures/decontam_freq.png", plot=last_plot())
+```
+
+```{r}
+ps.noncontam <- prune_taxa(!contamdf.freq$contaminant, ps)
+ps.noncontam
+```
+
+```{r}
+sample_data(ps)$is.neg <- sample_data(ps)$Sample_or_Control == "Control Sample"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg")
+table(contamdf.prev$contaminant)
+head(which(contamdf.prev$contaminant))
+```
+
+```{r}
+contamdf.prev05 <- isContaminant(ps, method="prevalence", neg="is.neg", threshold=0.5)
+table(contamdf.prev05$contaminant)
+```
+
+```{r}
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(ps, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Sample_or_Control == "Control Sample", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample_or_Control == "True Sample", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)") + pretty_plot
+
+ggsave("figures/decontam_prev.png", plot=last_plot())
+```
+
+```{r}
+contamdf.comb <- isContaminant(ps, method="combined", conc="quant_reading", neg="is.neg", threshold=0.1)
+table(contamdf.comb$contaminant)
+head(which(contamdf.comb$contaminant))
+```
+
+```{r}
+contamdf.either <- isContaminant(ps, method="either", conc="quant_reading", neg="is.neg", threshold=0.1)
+table(contamdf.either$contaminant)
+head(which(contamdf.either$contaminant))
+```
+
+```{r}
+ps.noncontam <- prune_taxa(!contamdf.either$contaminant, ps)
+ps.noncontam
+saveRDS(ps.noncontam, "robjects/ps_Stinson_all_decontam_either_notree.rds")
+```
+
+
+# STEP 4: Trim out non-microbial ASVs
+
+## remove mitochondria and chloroplast
+```{r}
+# mito <- ps %>% 
+#   transform_sample_counts(., function(x) 100*x/sum(x)) %>%
+#   subset_taxa(Family == "Mitochondria") %>% # needs to be capitalized
+#   psmelt()
+# 
+# unique(mito$OTU)
+# n_distinct(mito$OTU) #1180 ASVs!!
+# 
+# chloro <- ps %>% # not class level but yes order level
+#   transform_sample_counts(., function(x) 100*x/sum(x)) %>%
+#   subset_taxa(Order == "Chloroplast") %>%
+#   psmelt()
+# 
+# unique(chloro$OTU)
+# n_distinct(chloro$OTU) #245 ASVs!!
+
+# euks <- ps %>% # none
+#   transform_sample_counts(., function(x) 100*x/sum(x)) %>%
+#   subset_taxa(Kingdom == "Eukaryota") %>%
+#   psmelt()
+
+
+# remove mitochondria and chloroplast
+ps <- ps %>%
+  subset_taxa(Family != "Mitochondria") %>%
+  subset_taxa(Order != "Chloroplast")
+
+
+ntaxa(ps_new) # 65651
+
+ps_new <- ps_new %>%
+  subset_taxa(Family != "Mitochondria") %>% # also removes NAs if not already changed
+  subset_taxa(Order != "Chloroplast")
+
+ntaxa(ps_new) # 64226 (removed 1425)
+
+
+```
+
+## remove totally unclassified ASVs
+```{r}
+# remove unclassifieds at Domain level
+unks <- ps %>% # how many?
+  transform_sample_counts(., function(x) 100*x/sum(x)) %>%
+  subset_taxa(Kingdom == "") %>% # change to NA or whatever placeholder
+  psmelt()
+
+unique(unks$OTU)
+n_distinct(unks$OTU) # 17
+
+ps <- ps %>%
+  subset_taxa(Kingdom != "") 
+
+###
+ps_new <- ps_new %>%
+  subset_taxa(Domain != "") # changed to Domain
+
+ntaxa(ps_new) # 64209 (removed 17)
+
+# how many unclassified Bacteria? # this is using psclust_long in STE-Microbes taxa section
+
+
+# how many unclassified Archaea?
+```
+
+## who are the unclassified Bacteria?
+```{r}
+unk_bact_ps <- ps %>% # how many?
+  transform_sample_counts(., function(x) 100*x/sum(x)) %>%
+  subset_taxa(Phylum == "unclassified Bacteria") 
+
+unk_bact <- ps %>% # how many?
+  transform_sample_counts(., function(x) 100*x/sum(x)) %>%
+  subset_taxa(Phylum == "unclassified Bacteria") %>% 
+  psmelt()
+
+
+#unk_bact$Taxonomy = paste(unk_bact$Domain, unk_bact$Phylum, unk_bact$Class, unk_bact$Order, unk_bact$Family, unk_bact$Genus, sep = ";")
+unk_bact$Taxonomy = paste(unk_bact$Phylum, unk_bact$Genus, sep = ";")
+
+
+#Unk_bact_refseq = refseq(unk_bact)
+
+unk_bact_ps %>%
+      refseq() %>%
+      Biostrings::writeXStringSet( "Unknown_Bacteria_refseq_2024.06.24.fna", append=FALSE,
+                                  compress=FALSE, compression_level=NA, format="fasta")
+unk_bact_taxa = distinct(data.frame(OTU = unk_bact$OTU, Taxonomy = unk_bact$Taxonomy))
+
+write.csv(unk_bact_taxa, "Unknown_Bacteria_refseq_Taxonomy_2024.06.24.csv", row.names = F)
+```
+
+
+## save and load new phyloseq object
+```{r}
+#saveRDS(ps_new, "new_ps_Stinson_2024.03.14.rds") #save
+ps = readRDS("new_ps_Stinson_2024.03.14.rds") #load
+```
+
+
+
+# STEP 5: Alpha Diversity
+
+```{r load phyloseq object}
+# Set path to ESS210_2021_sequencing folder
+dirPath <- "/scratch/users/klangenf/Stinson_2022_16S_Analysis/" # CHANGE ME
+
+# Load phyloseq object if necessary
+psNegativeFilt <- readRDS(file = paste0(dirPath, "/robjects", "/ps_Stinson_all_decontam_either_notree.rds"))
+
+# Rename samples
+sample_metadata <- read.delim(file = paste0(dirPath, "/Stinson_16S_all_metadata2.txt"),
+                         header = TRUE,
+                         row.names = 1)
+sample_metadata <- sample_metadata[2:nrow(sample_metadata),]
+sample_metadata$Experiment_ID <- rownames(sample_metadata)
+sample_names(psNegativeFilt) <- sample_metadata$Experiment_ID[match(sample_names(psNegativeFilt), rownames(sample_metadata))]
+
+sample_metadata <- arrange(sample_metadata, by = date)
+
+# Print sample names
+sample_names(psNegativeFilt)
+```
+
+
+```{r plot DNA alpha diversity}
+# Create new phyloseq object
+psAlpha <- subset_samples(psNegativeFilt, sample.type %in% c("porewater", "sand", "seawater") & !(sample_names(psSingletonFilt) %in% c("240222-H-W3D2-2", "230222-L-W2D2-2"))) %>%
+  prune_taxa(taxa_sums(.) > 0, .)
+
+# Add new metadata variable corresponding to incubation number
+sample_data(psAlpha)$location <- sample_names(psAlpha) %>%
+           as.character %>%
+           strsplit("-") %>%
+           sapply("[", 3)#substr(sample_data(psAlpha)$sample, 1, 1)
+sample_data(psAlpha)$location[sample_data(psAlpha)$location == "SW"] <- "Seawater"
+sample_data(psAlpha)$location[sample_data(psAlpha)$location == "W2D2-1"] <- "W2D2"
+sample_data(psAlpha)$location[sample_data(psAlpha)$location == "W3D2-1"] <- "W3D2"
+sample_data(psAlpha)$location[sample_data(psAlpha)$location %in% c("A", "B", "S", "2A", "3A", "4A", "5A", "6A", "6A-F", "3B", "5B", "6B", "7B")] <- "Sand"
+sample_data(psAlpha)$Well <- 1
+sample_data(psAlpha)$Well[sample_data(psAlpha)$location %in% c("W2D1", "W2D2", "W2D3", "W2D4")] <- 2
+sample_data(psAlpha)$Well[sample_data(psAlpha)$location %in% c("W3D1", "W3D2", "W3D3", "W3D4")] <- 3
+sample_data(psAlpha)$Well[sample_data(psAlpha)$location %in% c("W4D1", "W4D2", "W4D3", "W4D4")] <- 4
+sample_data(psAlpha)$Well[sample_data(psAlpha)$location == "Sand"] <- "Sand"
+sample_data(psAlpha)$Well[sample_data(psAlpha)$location == "Seawater"] <- "Seawater"
+sample_data(psAlpha)$Depth <- sample_data(psAlpha)$Well
+sample_data(psAlpha)$Depth[sample_data(psAlpha)$location %in% c("W1D1", "W2D1", "W3D1", "W4D1")] <- 1
+sample_data(psAlpha)$Depth[sample_data(psAlpha)$location %in% c("W1D2", "W2D2", "W3D2", "W4D2")] <- 2
+sample_data(psAlpha)$Depth[sample_data(psAlpha)$location %in% c("W1D3", "W2D3", "W3D3", "W4D3")] <- 3
+sample_data(psAlpha)$Depth[sample_data(psAlpha)$location %in% c("W1D4", "W2D4", "W3D4", "W4D4")] <- 4
+sample_data(psAlpha)$Depth[sample_data(psAlpha)$location == "W1D5"] <- 5
+
+sample_data(psAlpha)$campaign <- factor(sample_data(psAlpha)$campaign, levels = c("Winter 2022", "Summer 2022"))
+
+# Plot alpha diversity
+shannon <- psAlpha %>%
+  #subset_samples(nucleic_acid == "DNA") %>%
+  #prune_samples(sample_sums(.) >= 1000, .) %>%
+  plot_richness(x = "location", measures = "Shannon", shape = NA) +
+    geom_boxplot(outlier.shape = NA) + 
+    geom_jitter(shape = 1, position = position_jitter(0.2)) +
+    facet_grid(campaign~Well, scales = "free", space = "free") +
+    
+    scale_y_continuous(limits = c(0, 9),
+                       breaks = c(seq(0, 9, 1)),
+                       expand = c(0,0)) +
+    
+    ylab("Shannon Diversity Index") + xlab("Location") +
+    pretty_plot
+shannon
+ggsave(filename = paste0(dirPath, "/figures", "/Stinson_all_Shannon.png"),
+       plot = shannon,
+       device = "png",
+       units = "cm",
+       width = 35,
+       height = 20,
+       dpi = 300)
+```
+
+### Richness
+```{r plot cDNA alpha diversity}
+observed <- psAlpha %>%
+  #subset_samples(nucleic_acid == "DNA") %>%
+  #prune_samples(sample_sums(.) >= 1000, .) %>%
+  plot_richness(x = "location", measures = "Observed", shape = NA) +
+    geom_boxplot(outlier.shape = NA) + 
+    geom_jitter(shape = 1, position = position_jitter(0.2)) +
+    facet_grid(campaign~Well, scales = "free", space = "free") +
+    
+    scale_y_continuous(limits = c(0, 14000),
+                       breaks = c(seq(0, 14000, 2000)),
+                       expand = c(0,0)) +
+    
+    ylab("Richness") + xlab("Location") +
+    pretty_plot
+observed
+ggsave(filename = paste0(dirPath, "/figures", "/Stinson_all_Richness.png"),
+       plot = observed,
+       device = "png",
+       units = "cm",
+       width = 35,
+       height = 20,
+       dpi = 300)
+```
+
+### Chao1
+```{r plot cDNA alpha diversity}
+chao <- psAlpha %>%
+  #prune_samples(sample_sums(.) >= 1000, .) %>%
+  plot_richness(x = "location", measures = "Chao1", shape = NA) +
+    geom_boxplot(outlier.shape = NA) + 
+    geom_jitter(shape = 1, position = position_jitter(0.2)) +
+    #geom_errorbar(aes(ymax=value + se, ymin=value - se), width=0.1, position = position_jitter(0.2)) +
+    facet_grid(campaign~Well, scales = "free", space = "free") +
+    
+    #scale_y_continuous(limits = c(0, 14000),
+     #                  breaks = c(seq(0, 14000, 2000)),
+      #                 expand = c(0,0)) +
+    
+    ylab("Chao1") + xlab("Location") +
+    pretty_plot
+chao
+ggsave(filename = paste0(dirPath, "/figures", "/Stinson_all_Chao1.png"),
+       plot = chao,
+       device = "png",
+       units = "cm",
+       width = 35,
+       height = 20,
+       dpi = 300)
+```
+
+### Inverse Simpson
+```{r plot cDNA alpha diversity}
+invsimp <- psAlpha %>%
+  #prune_samples(sample_sums(.) >= 1000, .) %>%
+  plot_richness(x = "location", measures = "InvSimpson", shape = NA) +
+    geom_boxplot(outlier.shape = NA) + 
+    geom_jitter(shape = 1, position = position_jitter(0.2)) +
+    #geom_errorbar(aes(ymax=value + se, ymin=value - se), width=0.1, position = position_jitter(0.2)) +
+    facet_grid(campaign~Well, scales = "free", space = "free") +
+    
+    #scale_y_continuous(limits = c(0, 14000),
+     #                  breaks = c(seq(0, 14000, 2000)),
+      #                 expand = c(0,0)) +
+    
+    ylab("Inverse Simpson") + xlab("Location") +
+    pretty_plot
+invsimp
+ggsave(filename = paste0(dirPath, "/figures", "/Stinson_all_InvSimpson.png"),
+       plot = invsimp,
+       device = "png",
+       units = "cm",
+       width = 35,
+       height = 20,
+       dpi = 300)
+```
+
+
+
+
+
+

@@ -1,0 +1,1675 @@
+---
+title: "Stinson-STE-Chemistry"
+author: "Jessica Bullington"
+date: "2024-05-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Part 0: Set up
+
+## 1. Load libraries
+```{r}
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(GGally) 
+library(gridExtra)
+library(tidyr)
+library(RColorBrewer)
+```
+
+## 2. Load data
+```{r}
+# load data
+chem = read.csv("Stinson_STE_Chemistry.csv")
+
+# check class of all columns in chem
+sapply(chem, class)
+
+# set factors
+chem$Well = as.factor(chem$Well)
+chem$Season = as.factor(chem$Season)
+chem$Depth = as.factor(chem$Depth)
+chem$depth_bin = as.factor(chem$depth_bin)
+chem$Tide = as.factor(chem$Tide)
+chem$ShortDate = as.factor(chem$ShortDate)
+chem$Tide.regime = as.factor(chem$Tide.regime)
+
+# add combinations of factors
+chem$Location = interaction(chem$Well, chem$Depth)
+chem$Well_Season = interaction(chem$Well, chem$Season)
+chem$Well_depth_bin = interaction(chem$Well, chem$depth_bin) 
+chem$Season_Tide = interaction(chem$Season, chem$Tide)
+
+sapply(chem, class)
+```
+
+
+
+# Part 1: Summary tables
+
+## 1. Number of observations
+```{r total number of observations}
+colSums(!is.na(chem))
+
+chem_pw = subset(chem, Well != "Seawater")
+colSums(!is.na(chem_pw))
+
+chem_pw_HL = subset(chem_pw, Tide != "Mid") # only to test tide without M
+colSums(!is.na(chem_pw_HL))
+
+```
+
+## 2. Table of ranges and means/medians
+
+```{r}
+
+# subset to just the variables of interest
+chem2 = chem[, -c(16:18)] 
+class(chem2$Well)
+levels(chem2$Well)
+
+chem2$Well = factor(chem2$Well, levels = c("Well 1", "Well 2", "Well 3", "Well 4", "Seawater"))
+
+
+chem_min = chem2 %>% 
+   group_by(Season, Well) %>% 
+    summarize_if(is.numeric, min, na.rm = T) 
+
+chem_max = chem2 %>%
+    group_by(Season, Well) %>% 
+    summarize_if(is.numeric, max, na.rm = T)
+
+chem_mean = chem2 %>% 
+    group_by(Season, Well) %>% 
+    summarize_if(is.numeric, mean, na.rm = T)
+
+chem_median = chem2 %>% 
+    group_by(Season, Well) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+# season
+
+feb_contour_median = subset(chem2, Season == "February 2022") %>% 
+    group_by(Tide.regime, Well, Depth) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+oct_contour_median = subset(chem2, Season == "October 2022") %>% 
+    group_by( Well, Depth) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+all_contour_median = rbind(feb_contour_median, oct_contour_median)
+
+
+# clusters
+
+cluster_chem_min = chem2 %>% 
+   group_by(Season, cluster) %>% 
+    summarize_if(is.numeric, min, na.rm = T) 
+
+cluster_chem_max = chem2 %>%
+    group_by(Season, cluster) %>% 
+    summarize_if(is.numeric, max, na.rm = T)
+
+cluster_chem_mean = chem2 %>% 
+    group_by(Season, cluster) %>% 
+    summarize_if(is.numeric, mean, na.rm = T)
+
+cluster_chem_median = chem2 %>% 
+    group_by(Season, cluster) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+# count number of samples in each region cluster
+cluster_chem_count = chem2 %>% 
+    group_by(Season, cluster) %>% 
+    summarize_if(is.numeric, funs(sum(!is.na(.))))
+
+sub = nrow(subset(chem2, Season == "February 2022" & cluster == "Shallow"))
+sum(is.na(sub$DOC))
+
+clusteronly_chem_median = chem2 %>% 
+    group_by(cluster) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+clusteronly_chem_max = chem2 %>% 
+    group_by(cluster) %>% 
+    summarize_if(is.numeric, max, na.rm = T)
+
+# compare W1-3 to W4
+W4_chem_median = chem %>% 
+    group_by(W4) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+```
+
+```{r cluster and season median values}
+season_median = chem %>% 
+    group_by(Season) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+cluster_season_median = chem %>% 
+    group_by(Season, cluster) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+
+```
+
+
+
+
+
+# Part 2: Statistical tests 
+## Shapiro-Wilk (normality)
+```{r shapiro tests}
+
+shapiro.test(chem_pw$Salinity)
+shapiro.test(chem_pw$Temperature)
+shapiro.test(chem_pw$DO_uM)
+shapiro.test(chem_pw$pH)
+shapiro.test(chem_pw$Ammonium)
+shapiro.test(chem_pw$Nitrate)
+shapiro.test(chem_pw$Nitrite)
+shapiro.test(chem_pw$Phosphate)
+shapiro.test(chem_pw$Cells_mL)
+shapiro.test(chem_pw$DOC)
+shapiro.test(chem_pw$CobleA)
+shapiro.test(chem_pw$CobleB)
+shapiro.test(chem_pw$CobleC)
+shapiro.test(chem_pw$CobleM)
+shapiro.test(chem_pw$CobleT)
+shapiro.test(chem_pw$Fpeak)
+shapiro.test(chem_pw$Stedmon_D)
+shapiro.test(chem_pw$Optical_Brighteners)
+shapiro.test(chem_pw$Lignin)
+shapiro.test(chem_pw$HIX)
+shapiro.test(chem_pw$BIX)
+shapiro.test(chem_pw$FI)
+shapiro.test(chem_pw$M_to_C)
+
+```
+
+
+## Kruskal-Wallis (non-parametric)
+## 1. All data ~ Well, Depth, Season, Date, Tide Regime, Tide
+### A. Run tests
+```{r salinity}
+sal.well = kruskal.test(Salinity ~ Well, data = chem_pw)
+sal.depth_bin = kruskal.test(Salinity ~ depth_bin, data = chem_pw)
+sal.well.depth_bin = kruskal.test(Salinity ~ Well_depth_bin, data = chem_pw)
+sal.well.season = kruskal.test(Salinity ~ Well_Season, data = chem_pw)
+sal.season = kruskal.test(Salinity ~ Season, data = chem_pw)
+sal.date = kruskal.test(Salinity ~ ShortDate, data = chem_pw)
+sal.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = chem_pw)
+sal.tide = kruskal.test(Salinity ~ Tide, data = chem_pw_HL)
+sal.season.tide = kruskal.test(Salinity ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r temperature}
+temp.well = kruskal.test(Temperature ~ Well, data = chem_pw)
+temp.depth_bin = kruskal.test(Temperature ~ depth_bin, data = chem_pw)
+temp.well.depth_bin = kruskal.test(Temperature ~ Well_depth_bin, data = chem_pw)
+temp.well.season = kruskal.test(Temperature ~ Well_Season, data = chem_pw)
+temp.season = kruskal.test(Temperature ~ Season, data = chem_pw)
+temp.date = kruskal.test(Temperature ~ ShortDate, data = chem_pw)
+temp.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = chem_pw)
+temp.tide = kruskal.test(Temperature ~ Tide, data = chem_pw_HL)
+temp.season.tide = kruskal.test(Temperature ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r dissolved oxygen}
+DO.well = kruskal.test(DO_uM ~ Well, data = chem_pw)
+DO.depth_bin = kruskal.test(DO_uM ~ depth_bin, data = chem_pw)
+DO.well.depth_bin = kruskal.test(DO_uM ~ Well_depth_bin, data = chem_pw)
+DO.well.season = kruskal.test(DO_uM ~ Well_Season, data = chem_pw)
+DO.season = kruskal.test(DO_uM ~ Season, data = chem_pw)
+DO.date = kruskal.test(DO_uM ~ ShortDate, data = chem_pw)
+DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = chem_pw)
+DO.tide = kruskal.test(DO_uM ~ Tide, data = chem_pw_HL)
+DO.season.tide = kruskal.test(DO_uM ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r pH}
+pH.well = kruskal.test(pH ~ Well, data = chem_pw)
+pH.depth_bin = kruskal.test(pH ~ depth_bin, data = chem_pw)
+pH.well.depth_bin = kruskal.test(pH ~ Well_depth_bin, data = chem_pw)
+pH.well.season = kruskal.test(pH ~ Well_Season, data = chem_pw)
+pH.season = kruskal.test(pH ~ Season, data = chem_pw)
+pH.date = kruskal.test(pH ~ ShortDate, data = chem_pw)
+pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = chem_pw)
+pH.tide = kruskal.test(pH ~ Tide, data = chem_pw_HL)
+pH.season.tide = kruskal.test(pH ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r ammonium}
+ammonium.well = kruskal.test(Ammonium ~ Well, data = chem_pw)
+ammonium.depth_bin = kruskal.test(Ammonium ~ depth_bin, data = chem_pw)
+ammonium.well.depth_bin = kruskal.test(Ammonium ~ Well_depth_bin, data = chem_pw)
+ammonium.well.season = kruskal.test(Ammonium ~ Well_Season, data = chem_pw)
+ammonium.season = kruskal.test(Ammonium ~ Season, data = chem_pw)
+ammonium.date = kruskal.test(Ammonium ~ ShortDate, data = chem_pw)
+ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = chem_pw)
+ammonium.tide = kruskal.test(Ammonium ~ Tide, data = chem_pw_HL)
+ammonium.season.tide = kruskal.test(Ammonium ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r nitrate}
+nitrate.well = kruskal.test(Nitrate ~ Well, data = chem_pw)
+nitrate.depth_bin = kruskal.test(Nitrate ~ depth_bin, data = chem_pw)
+nitrate.well.depth_bin = kruskal.test(Nitrate ~ Well_depth_bin, data = chem_pw)
+nitrate.well.season = kruskal.test(Nitrate ~ Well_Season, data = chem_pw)
+nitrate.season = kruskal.test(Nitrate ~ Season, data = chem_pw)
+nitrate.date = kruskal.test(Nitrate ~ ShortDate, data = chem_pw)
+nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = chem_pw)
+nitrate.tide = kruskal.test(Nitrate ~ Tide, data = chem_pw_HL)
+nitrate.season.tide = kruskal.test(Nitrate ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r nitrite}
+nitrite.well = kruskal.test(Nitrite ~ Well, data = chem_pw)
+nitrite.depth_bin = kruskal.test(Nitrite ~ depth_bin, data = chem_pw)
+nitrite.well.depth_bin = kruskal.test(Nitrite ~ Well_depth_bin, data = chem_pw)
+nitrite.well.season = kruskal.test(Nitrite ~ Well_Season, data = chem_pw)
+nitrite.season = kruskal.test(Nitrite ~ Season, data = chem_pw)
+nitrite.date = kruskal.test(Nitrite ~ ShortDate, data = chem_pw)
+nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = chem_pw)
+nitrite.tide = kruskal.test(Nitrite ~ Tide, data = chem_pw_HL)
+nitrite.season.tide = kruskal.test(Nitrite ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r phosphate}
+phosphate.well = kruskal.test(Phosphate ~ Well, data = chem_pw)
+phosphate.depth_bin = kruskal.test(Phosphate ~ depth_bin, data = chem_pw)
+phosphate.well.depth_bin = kruskal.test(Phosphate ~ Well_depth_bin, data = chem_pw)
+phosphate.well.season = kruskal.test(Phosphate ~ Well_Season, data = chem_pw)
+phosphate.season = kruskal.test(Phosphate ~ Season, data = chem_pw)
+phosphate.date = kruskal.test(Phosphate ~ ShortDate, data = chem_pw)
+phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = chem_pw)
+phosphate.tide = kruskal.test(Phosphate ~ Tide, data = chem_pw_HL)
+phosphate.season.tide = kruskal.test(Phosphate ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r cells_ml}
+cells.well = kruskal.test(Cells_mL ~ Well, data = chem_pw)
+cells.depth_bin = kruskal.test(Cells_mL ~ depth_bin, data = chem_pw)
+cells.well.depth_bin = kruskal.test(Cells_mL ~ Well_depth_bin, data = chem_pw)
+cells.well.season = kruskal.test(Cells_mL ~ Well_Season, data = chem_pw)
+cells.season = kruskal.test(Cells_mL ~ Season, data = chem_pw)
+cells.date = kruskal.test(Cells_mL ~ ShortDate, data = chem_pw)
+cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = chem_pw)
+cells.tide = kruskal.test(Cells_mL ~ Tide, data = chem_pw_HL)
+cells.season.tide = kruskal.test(Cells_mL ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r DOC}
+DOC.well = kruskal.test(DOC ~ Well, data = chem_pw)
+DOC.depth_bin = kruskal.test(DOC ~ depth_bin, data = chem_pw)
+DOC.well.depth_bin = kruskal.test(DOC ~ Well_depth_bin, data = chem_pw)
+DOC.well.season = kruskal.test(DOC ~ Well_Season, data = chem_pw)
+DOC.season = kruskal.test(DOC ~ Season, data = chem_pw)
+DOC.date = kruskal.test(DOC ~ ShortDate, data = chem_pw)
+DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = chem_pw)
+DOC.tide = kruskal.test(DOC ~ Tide, data = chem_pw_HL)
+DOC.season.tide = kruskal.test(DOC ~ Season_Tide, data = chem_pw_HL)
+
+
+```
+
+```{r CobleA}
+CobleA.well = kruskal.test(CobleA ~ Well, data = chem_pw)
+CobleA.depth_bin = kruskal.test(CobleA ~ depth_bin, data = chem_pw)
+CobleA.well.depth_bin = kruskal.test(CobleA ~ Well_depth_bin, data = chem_pw)
+CobleA.well.season = kruskal.test(CobleA ~ Well_Season, data = chem_pw)
+CobleA.season = kruskal.test(CobleA ~ Season, data = chem_pw)
+CobleA.date = kruskal.test(CobleA ~ ShortDate, data = chem_pw)
+CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = chem_pw)
+CobleA.tide = kruskal.test(CobleA ~ Tide, data = chem_pw_HL)
+CobleA.season.tide = kruskal.test(CobleA ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r CobleB}
+CobleB.well = kruskal.test(CobleB ~ Well, data = chem_pw)
+CobleB.depth_bin = kruskal.test(CobleB ~ depth_bin, data = chem_pw)
+CobleB.well.depth_bin = kruskal.test(CobleB ~ Well_depth_bin, data = chem_pw)
+CobleB.well.season = kruskal.test(CobleB ~ Well_Season, data = chem_pw)
+CobleB.season = kruskal.test(CobleB ~ Season, data = chem_pw)
+CobleB.date = kruskal.test(CobleB ~ ShortDate, data = chem_pw)
+CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = chem_pw)
+CobleB.tide = kruskal.test(CobleB ~ Tide, data = chem_pw_HL)
+CobleB.season.tide = kruskal.test(CobleB ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r CobleC}
+CobleC.well = kruskal.test(CobleC ~ Well, data = chem_pw)
+CobleC.depth_bin = kruskal.test(CobleC ~ depth_bin, data = chem_pw)
+CobleC.well.depth_bin = kruskal.test(CobleC ~ Well_depth_bin, data = chem_pw)
+CobleC.well.season = kruskal.test(CobleC ~ Well_Season, data = chem_pw)
+CobleC.season = kruskal.test(CobleC ~ Season, data = chem_pw)
+CobleC.date = kruskal.test(CobleC ~ ShortDate, data = chem_pw)
+CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = chem_pw)
+CobleC.tide = kruskal.test(CobleC ~ Tide, data = chem_pw_HL)
+CobleC.season.tide = kruskal.test(CobleC ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r CobleM}
+CobleM.well = kruskal.test(CobleM ~ Well, data = chem_pw)
+CobleM.depth_bin = kruskal.test(CobleM ~ depth_bin, data = chem_pw)
+CobleM.well.depth_bin = kruskal.test(CobleM ~ Well_depth_bin, data = chem_pw)
+CobleM.well.season = kruskal.test(CobleM ~ Well_Season, data = chem_pw)
+CobleM.season = kruskal.test(CobleM ~ Season, data = chem_pw)
+CobleM.date = kruskal.test(CobleM ~ ShortDate, data = chem_pw)
+CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = chem_pw)
+CobleM.tide = kruskal.test(CobleM ~ Tide, data = chem_pw_HL)
+CobleM.season.tide = kruskal.test(CobleM ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r CobleT}
+CobleT.well = kruskal.test(CobleT ~ Well, data = chem_pw)
+CobleT.depth_bin = kruskal.test(CobleT ~ depth_bin, data = chem_pw)
+CobleT.well.depth_bin = kruskal.test(CobleT ~ Well_depth_bin, data = chem_pw)
+CobleT.well.season = kruskal.test(CobleT ~ Well_Season, data = chem_pw)
+CobleT.season = kruskal.test(CobleT ~ Season, data = chem_pw)
+CobleT.date = kruskal.test(CobleT ~ ShortDate, data = chem_pw)
+CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = chem_pw)
+CobleT.tide = kruskal.test(CobleT ~ Tide, data = chem_pw_HL)
+CobleT.season.tide = kruskal.test(CobleT ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r Fpeak}
+Fpeak.well = kruskal.test(Fpeak ~ Well, data = chem_pw)
+Fpeak.depth_bin = kruskal.test(Fpeak ~ depth_bin, data = chem_pw)
+Fpeak.well.depth_bin = kruskal.test(Fpeak ~ Well_depth_bin, data = chem_pw)
+Fpeak.well.season = kruskal.test(Fpeak ~ Well_Season, data = chem_pw)
+Fpeak.season = kruskal.test(Fpeak ~ Season, data = chem_pw)
+Fpeak.date = kruskal.test(Fpeak ~ ShortDate, data = chem_pw)
+Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = chem_pw)
+Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = chem_pw_HL)
+Fpeak.season.tide = kruskal.test(Fpeak ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r Stedmon_D}
+Stedmon_D.well = kruskal.test(Stedmon_D ~ Well, data = chem_pw)
+Stedmon_D.depth_bin = kruskal.test(Stedmon_D ~ depth_bin, data = chem_pw)
+Stedmon_D.well.depth_bin = kruskal.test(Stedmon_D ~ Well_depth_bin, data = chem_pw)
+Stedmon_D.well.season = kruskal.test(Stedmon_D ~ Well_Season, data = chem_pw)
+Stedmon_D.season = kruskal.test(Stedmon_D ~ Season, data = chem_pw)
+Stedmon_D.date = kruskal.test(Stedmon_D ~ ShortDate, data = chem_pw)
+Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = chem_pw)
+Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = chem_pw_HL)
+Stedmon_D.season.tide = kruskal.test(Stedmon_D ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r Optical_Brighteners}
+Optical_Brighteners.well = kruskal.test(Optical_Brighteners ~ Well, data = chem_pw)
+Optical_Brighteners.depth_bin = kruskal.test(Optical_Brighteners ~ depth_bin, data = chem_pw)
+Optical_Brighteners.well.depth_bin = kruskal.test(Optical_Brighteners ~ Well_depth_bin, data = chem_pw)
+Optical_Brighteners.well.season = kruskal.test(Optical_Brighteners ~ Well_Season, data = chem_pw)
+Optical_Brighteners.season = kruskal.test(Optical_Brighteners ~ Season, data = chem_pw)
+Optical_Brighteners.date = kruskal.test(Optical_Brighteners ~ ShortDate, data = chem_pw)
+Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = chem_pw)
+Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = chem_pw_HL)
+Optical_Brighteners.season.tide = kruskal.test(Optical_Brighteners ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r Lignin}
+Lignin.well = kruskal.test(Lignin ~ Well, data = chem_pw)
+Lignin.depth_bin = kruskal.test(Lignin ~ depth_bin, data = chem_pw)
+Lignin.well.depth_bin = kruskal.test(Lignin ~ Well_depth_bin, data = chem_pw)
+Lignin.well.season = kruskal.test(Lignin ~ Well_Season, data = chem_pw)
+Lignin.season = kruskal.test(Lignin ~ Season, data = chem_pw)
+Lignin.date = kruskal.test(Lignin ~ ShortDate, data = chem_pw)
+Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = chem_pw)
+Lignin.tide = kruskal.test(Lignin ~ Tide, data = chem_pw_HL)
+Lignin.season.tide = kruskal.test(Lignin ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r HIX}
+HIX.well = kruskal.test(HIX ~ Well, data = chem_pw)
+HIX.depth_bin = kruskal.test(HIX ~ depth_bin, data = chem_pw)
+HIX.well.depth_bin = kruskal.test(HIX ~ Well_depth_bin, data = chem_pw)
+HIX.well.season = kruskal.test(HIX ~ Well_Season, data = chem_pw)
+HIX.season = kruskal.test(HIX ~ Season, data = chem_pw)
+HIX.date = kruskal.test(HIX ~ ShortDate, data = chem_pw)
+HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = chem_pw)
+HIX.tide = kruskal.test(HIX ~ Tide, data = chem_pw_HL)
+HIX.season.tide = kruskal.test(HIX ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r BIX}
+BIX.well = kruskal.test(BIX ~ Well, data = chem_pw)
+BIX.depth_bin = kruskal.test(BIX ~ depth_bin, data = chem_pw)
+BIX.well.depth_bin = kruskal.test(BIX ~ Well_depth_bin, data = chem_pw)
+BIX.well.season = kruskal.test(BIX ~ Well_Season, data = chem_pw)
+BIX.season = kruskal.test(BIX ~ Season, data = chem_pw)
+BIX.date = kruskal.test(BIX ~ ShortDate, data = chem_pw)
+BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = chem_pw)
+BIX.tide = kruskal.test(BIX ~ Tide, data = chem_pw_HL)
+BIX.season.tide = kruskal.test(BIX ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r FI}
+FI.well = kruskal.test(FI ~ Well, data = chem_pw)
+FI.depth_bin = kruskal.test(FI ~ depth_bin, data = chem_pw)
+FI.well.depth_bin = kruskal.test(FI ~ Well_depth_bin, data = chem_pw)
+FI.well.season = kruskal.test(FI ~ Well_Season, data = chem_pw)
+FI.season = kruskal.test(FI ~ Season, data = chem_pw)
+FI.date = kruskal.test(FI ~ ShortDate, data = chem_pw)
+FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = chem_pw)
+FI.tide = kruskal.test(FI ~ Tide, data = chem_pw_HL)
+FI.season.tide = kruskal.test(FI ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+```{r M_to_C}
+M_C.well = kruskal.test(M_to_C ~ Well, data = chem_pw)
+M_C.depth_bin = kruskal.test(M_to_C ~ depth_bin, data = chem_pw)
+M_C.well.depth_bin = kruskal.test(M_to_C ~ Well_depth_bin, data = chem_pw)
+M_C.well.season = kruskal.test(M_to_C ~ Well_Season, data = chem_pw)
+M_C.season = kruskal.test(M_to_C ~ Season, data = chem_pw)
+M_C.date = kruskal.test(M_to_C ~ ShortDate, data = chem_pw)
+M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = chem_pw)
+M_C.tide = kruskal.test(M_to_C ~ Tide, data = chem_pw_HL)
+M_C.season.tide = kruskal.test(M_to_C ~ Season_Tide, data = chem_pw_HL)
+
+```
+
+
+### B. Adjust p-values for multiple tests
+```{r adjust p-values}
+# make a vector of all p-values
+pvalues.all = c(sal.well$p.value, sal.depth_bin$p.value, sal.well.depth_bin$p.value, sal.well.season$p.value, sal.season$p.value, sal.date$p.value, sal.tide.regime$p.value, sal.tide$p.value, sal.season.tide$p.value,
+
+                temp.well$p.value, temp.depth_bin$p.value, temp.well.depth_bin$p.value, temp.well.season$p.value, temp.season$p.value, temp.date$p.value, temp.tide.regime$p.value, temp.tide$p.value, temp.season.tide$p.value,
+                
+                DO.well$p.value, DO.depth_bin$p.value, DO.well.depth_bin$p.value, DO.well.season$p.value, DO.season$p.value, DO.date$p.value, DO.tide.regime$p.value, DO.tide$p.value, DO.season.tide$p.value,
+                
+                pH.well$p.value, pH.depth_bin$p.value, pH.well.depth_bin$p.value, pH.well.season$p.value, pH.season$p.value, pH.date$p.value, pH.tide.regime$p.value, pH.tide$p.value, pH.season.tide$p.value,
+                
+                ammonium.well$p.value, ammonium.depth_bin$p.value, ammonium.well.depth_bin$p.value, ammonium.well.season$p.value, ammonium.season$p.value, ammonium.date$p.value, ammonium.tide.regime$p.value, ammonium.tide$p.value, ammonium.season.tide$p.value,
+                
+                nitrate.well$p.value, nitrate.depth_bin$p.value, nitrate.well.depth_bin$p.value, nitrate.well.season$p.value, nitrate.season$p.value, nitrate.date$p.value, nitrate.tide.regime$p.value, nitrate.tide$p.value, nitrate.season.tide$p.value,
+                
+                nitrite.well$p.value, nitrite.depth_bin$p.value, nitrite.well.depth_bin$p.value, nitrite.well.season$p.value, nitrite.season$p.value, nitrite.date$p.value, nitrite.tide.regime$p.value, nitrite.tide$p.value, nitrite.season.tide$p.value,
+                
+                phosphate.well$p.value, phosphate.depth_bin$p.value, phosphate.well.depth_bin$p.value, phosphate.well.season$p.value, phosphate.season$p.value, phosphate.date$p.value, phosphate.tide.regime$p.value, phosphate.tide$p.value, phosphate.season.tide$p.value,
+                
+                cells.well$p.value, cells.depth_bin$p.value, cells.well.depth_bin$p.value, cells.well.season$p.value, cells.season$p.value, cells.date$p.value, cells.tide.regime$p.value, cells.tide$p.value, cells.season.tide$p.value,
+                
+                DOC.well$p.value, DOC.depth_bin$p.value, DOC.well.depth_bin$p.value, DOC.well.season$p.value, DOC.season$p.value, DOC.date$p.value, DOC.tide.regime$p.value, DOC.tide$p.value, DOC.season.tide$p.value,
+                
+                CobleA.well$p.value, CobleA.depth_bin$p.value, CobleA.well.depth_bin$p.value, CobleA.well.season$p.value, CobleA.season$p.value, CobleA.date$p.value, CobleA.tide.regime$p.value, CobleA.tide$p.value, CobleA.season.tide$p.value,
+                
+                CobleB.well$p.value, CobleB.depth_bin$p.value, CobleB.well.depth_bin$p.value, CobleB.well.season$p.value, CobleB.season$p.value, CobleB.date$p.value, CobleB.tide.regime$p.value, CobleB.tide$p.value, CobleB.season.tide$p.value,
+                
+                CobleC.well$p.value, CobleC.depth_bin$p.value, CobleC.well.depth_bin$p.value, CobleC.well.season$p.value, CobleC.season$p.value, CobleC.date$p.value, CobleC.tide.regime$p.value, CobleC.tide$p.value, CobleC.season.tide$p.value,
+                
+                CobleM.well$p.value, CobleM.depth_bin$p.value, CobleM.well.depth_bin$p.value, CobleM.well.season$p.value, CobleM.season$p.value, CobleM.date$p.value, CobleM.tide.regime$p.value, CobleM.tide$p.value, CobleM.season.tide$p.value,
+                
+                CobleT.well$p.value, CobleT.depth_bin$p.value, CobleT.well.depth_bin$p.value, CobleT.well.season$p.value, CobleT.season$p.value, CobleT.date$p.value, CobleT.tide.regime$p.value, CobleT.tide$p.value, CobleT.season.tide$p.value,
+                
+                Fpeak.well$p.value, Fpeak.depth_bin$p.value, Fpeak.well.depth_bin$p.value, Fpeak.well.season$p.value, Fpeak.season$p.value, Fpeak.date$p.value, Fpeak.tide.regime$p.value, Fpeak.tide$p.value, Fpeak.season.tide$p.value,
+                
+                Stedmon_D.well$p.value, Stedmon_D.depth_bin$p.value, Stedmon_D.well.depth_bin$p.value, Stedmon_D.well.season$p.value, Stedmon_D.season$p.value, Stedmon_D.date$p.value, Stedmon_D.tide.regime$p.value, Stedmon_D.tide$p.value, Stedmon_D.season.tide$p.value,
+                
+                Optical_Brighteners.well$p.value, Optical_Brighteners.depth_bin$p.value, Optical_Brighteners.well.depth_bin$p.value, Optical_Brighteners.well.season$p.value, Optical_Brighteners.season$p.value, Optical_Brighteners.date$p.value, Optical_Brighteners.tide.regime$p.value, Optical_Brighteners.tide$p.value, Optical_Brighteners.season.tide$p.value,
+                
+                Lignin.well$p.value, Lignin.depth_bin$p.value, Lignin.well.depth_bin$p.value, Lignin.well.season$p.value, Lignin.season$p.value, Lignin.date$p.value, Lignin.tide.regime$p.value, Lignin.tide$p.value, Lignin.season.tide$p.value,
+                
+                HIX.well$p.value, HIX.depth_bin$p.value, HIX.well.depth_bin$p.value, HIX.well.season$p.value, HIX.season$p.value, HIX.date$p.value, HIX.tide.regime$p.value, HIX.tide$p.value, HIX.season.tide$p.value,
+                
+                BIX.well$p.value, BIX.depth_bin$p.value, BIX.well.depth_bin$p.value, BIX.well.season$p.value, BIX.season$p.value, BIX.date$p.value, BIX.tide.regime$p.value, BIX.tide$p.value, BIX.season.tide$p.value,
+                
+                FI.well$p.value, FI.depth_bin$p.value, FI.well.depth_bin$p.value, FI.well.season$p.value, FI.season$p.value, FI.date$p.value, FI.tide.regime$p.value, FI.tide$p.value, FI.season.tide$p.value,
+               
+                 M_C.well$p.value, M_C.depth_bin$p.value, M_C.well.depth_bin$p.value, M_C.well.season$p.value, M_C.season$p.value, M_C.date$p.value, M_C.tide.regime$p.value, M_C.tide$p.value, M_C.season.tide$p.value)
+
+
+pvalues_well_BH = p.adjust(pvalues.all, method="BH")
+pvalues_well_Bonf = p.adjust(pvalues.all, method="bonferroni")
+
+pvalues_combo = data.frame(pvalues.all, pvalues_well_BH, pvalues_well_Bonf)
+
+#write.csv(pvalues_combo, "pvalues_combo_2024.05.02.csv", row.names = F)
+
+
+```
+
+
+## 2. Within each region/cluster ~ Season
+### A. Run tests 
+```{r shallow test of season}
+# subset to shallow cluster
+shallow = subset(chem, cluster == "Shallow")
+
+# test season for all variables
+shallow.salinity = kruskal.test(Salinity ~ Season, data = shallow)
+shallow.temperature = kruskal.test(Temperature ~ Season, data = shallow)
+shallow.DO = kruskal.test(DO_uM ~ Season, data = shallow)
+shallow.pH = kruskal.test(pH ~ Season, data = shallow)
+shallow.ammonium = kruskal.test(Ammonium ~ Season, data = shallow)
+shallow.nitrate = kruskal.test(Nitrate ~ Season, data = shallow)
+shallow.nitrite = kruskal.test(Nitrite ~ Season, data = shallow)
+shallow.phosphate = kruskal.test(Phosphate ~ Season, data = shallow)
+shallow.cells = kruskal.test(Cells_mL ~ Season, data = shallow)
+shallow.DOC = kruskal.test(DOC ~ Season, data = shallow)
+shallow.CobleA = kruskal.test(CobleA ~ Season, data = shallow)
+shallow.CobleB = kruskal.test(CobleB ~ Season, data = shallow)
+shallow.CobleC = kruskal.test(CobleC ~ Season, data = shallow)
+shallow.CobleM = kruskal.test(CobleM ~ Season, data = shallow)
+shallow.CobleT = kruskal.test(CobleT ~ Season, data = shallow)
+shallow.Fpeak = kruskal.test(Fpeak ~ Season, data = shallow)
+shallow.Stedmon_D = kruskal.test(Stedmon_D ~ Season, data = shallow)
+shallow.Optical_Brighteners = kruskal.test(Optical_Brighteners ~ Season, data = shallow)
+shallow.Lignin = kruskal.test(Lignin ~ Season, data = shallow)
+shallow.HIX = kruskal.test(HIX ~ Season, data = shallow)
+shallow.BIX = kruskal.test(BIX ~ Season, data = shallow)
+shallow.FI = kruskal.test(FI ~ Season, data = shallow)
+shallow.M_C = kruskal.test(M_to_C ~ Season, data = shallow)
+```
+
+```{r intermediate test of season}
+# subset to intermediate cluster
+intermediate = subset(chem, cluster == "Intermediate")
+
+# test season for all variables
+intermediate.salinity = kruskal.test(Salinity ~ Season, data = intermediate)
+intermediate.temperature = kruskal.test(Temperature ~ Season, data = intermediate)
+intermediate.DO = kruskal.test(DO_uM ~ Season, data = intermediate)
+intermediate.pH = kruskal.test(pH ~ Season, data = intermediate)
+intermediate.ammonium = kruskal.test(Ammonium ~ Season, data = intermediate)
+intermediate.nitrate = kruskal.test(Nitrate ~ Season, data = intermediate)
+intermediate.nitrite = kruskal.test(Nitrite ~ Season, data = intermediate)
+intermediate.phosphate = kruskal.test(Phosphate ~ Season, data = intermediate)
+intermediate.cells = kruskal.test(Cells_mL ~ Season, data = intermediate)
+intermediate.DOC = kruskal.test(DOC ~ Season, data = intermediate)
+intermediate.CobleA = kruskal.test(CobleA ~ Season, data = intermediate)
+intermediate.CobleB = kruskal.test(CobleB ~ Season, data = intermediate)
+intermediate.CobleC = kruskal.test(CobleC ~ Season, data = intermediate)
+intermediate.CobleM = kruskal.test(CobleM ~ Season, data = intermediate)
+intermediate.CobleT = kruskal.test(CobleT ~ Season, data = intermediate)
+intermediate.Fpeak = kruskal.test(Fpeak ~ Season, data = intermediate)
+intermediate.Stedmon_D = kruskal.test(Stedmon_D ~ Season, data = intermediate)
+intermediate.Optical_Brighteners = kruskal.test(Optical_Brighteners ~ Season, data = intermediate)
+intermediate.Lignin = kruskal.test(Lignin ~ Season, data = intermediate)
+intermediate.HIX = kruskal.test(HIX ~ Season, data = intermediate)
+intermediate.BIX = kruskal.test(BIX ~ Season, data = intermediate)
+intermediate.FI = kruskal.test(FI ~ Season, data = intermediate)
+intermediate.M_C = kruskal.test(M_to_C ~ Season, data = intermediate)
+
+
+```
+
+```{r deep test of season}
+# subset to deep cluster
+deep = subset(chem, cluster == "Deep")
+
+# test season for all variables
+deep.salinity = kruskal.test(Salinity ~ Season, data = deep)
+deep.temperature = kruskal.test(Temperature ~ Season, data = deep)
+deep.DO = kruskal.test(DO_uM ~ Season, data = deep)
+deep.pH = kruskal.test(pH ~ Season, data = deep)
+deep.ammonium = kruskal.test(Ammonium ~ Season, data = deep)
+deep.nitrate = kruskal.test(Nitrate ~ Season, data = deep)
+deep.nitrite = kruskal.test(Nitrite ~ Season, data = deep)
+deep.phosphate = kruskal.test(Phosphate ~ Season, data = deep)
+deep.cells = kruskal.test(Cells_mL ~ Season, data = deep)
+deep.DOC = kruskal.test(DOC ~ Season, data = deep)
+deep.CobleA = kruskal.test(CobleA ~ Season, data = deep)
+deep.CobleB = kruskal.test(CobleB ~ Season, data = deep)
+deep.CobleC = kruskal.test(CobleC ~ Season, data = deep)
+deep.CobleM = kruskal.test(CobleM ~ Season, data = deep)
+deep.CobleT = kruskal.test(CobleT ~ Season, data = deep)
+deep.Fpeak = kruskal.test(Fpeak ~ Season, data = deep)
+deep.Stedmon_D = kruskal.test(Stedmon_D ~ Season, data = deep)
+deep.Optical_Brighteners = kruskal.test(Optical_Brighteners ~ Season, data = deep)
+deep.Lignin = kruskal.test(Lignin ~ Season, data = deep)
+deep.HIX = kruskal.test(HIX ~ Season, data = deep)
+deep.BIX = kruskal.test(BIX ~ Season, data = deep)
+deep.FI = kruskal.test(FI ~ Season, data = deep)
+deep.M_C = kruskal.test(M_to_C ~ Season, data = deep)
+
+
+```
+
+```{r well 4 test of season}
+# subset to well 4 cluster
+well4 = subset(chem, cluster == "Well 4")
+
+# test season for all variables
+well4.salinity = kruskal.test(Salinity ~ Season, data = well4)
+well4.temperature = kruskal.test(Temperature ~ Season, data = well4)
+well4.DO = kruskal.test(DO_uM ~ Season, data = well4)
+well4.pH = kruskal.test(pH ~ Season, data = well4)
+well4.ammonium = kruskal.test(Ammonium ~ Season, data = well4)
+well4.nitrate = kruskal.test(Nitrate ~ Season, data = well4)
+well4.nitrite = kruskal.test(Nitrite ~ Season, data = well4)
+well4.phosphate = kruskal.test(Phosphate ~ Season, data = well4)
+well4.cells = kruskal.test(Cells_mL ~ Season, data = well4)
+well4.DOC = kruskal.test(DOC ~ Season, data = well4)
+well4.CobleA = kruskal.test(CobleA ~ Season, data = well4)
+well4.CobleB = kruskal.test(CobleB ~ Season, data = well4)
+well4.CobleC = kruskal.test(CobleC ~ Season, data = well4)
+well4.CobleM = kruskal.test(CobleM ~ Season, data = well4)
+well4.CobleT = kruskal.test(CobleT ~ Season, data = well4)
+well4.Fpeak = kruskal.test(Fpeak ~ Season, data = well4)
+well4.Stedmon_D = kruskal.test(Stedmon_D ~ Season, data = well4)
+well4.Optical_Brighteners = kruskal.test(Optical_Brighteners ~ Season, data = well4)
+well4.Lignin = kruskal.test(Lignin ~ Season, data = well4)
+well4.HIX = kruskal.test(HIX ~ Season, data = well4)
+well4.BIX = kruskal.test(BIX ~ Season, data = well4)
+well4.FI = kruskal.test(FI ~ Season, data = well4)
+well4.M_C = kruskal.test(M_to_C ~ Season, data = well4)
+
+```
+
+```{r seawater test of season}
+# subset to seawater cluster
+seawater = subset(chem, cluster == "Seawater")
+
+# test season for all variables
+seawater.salinity = kruskal.test(Salinity ~ Season, data = seawater)
+seawater.temperature = kruskal.test(Temperature ~ Season, data = seawater)
+seawater.DO = kruskal.test(DO_uM ~ Season, data = seawater)
+seawater.pH = kruskal.test(pH ~ Season, data = seawater)
+seawater.ammonium = kruskal.test(Ammonium ~ Season, data = seawater)
+seawater.nitrate = kruskal.test(Nitrate ~ Season, data = seawater)
+seawater.nitrite = kruskal.test(Nitrite ~ Season, data = seawater)
+seawater.phosphate = kruskal.test(Phosphate ~ Season, data = seawater)
+seawater.cells = kruskal.test(Cells_mL ~ Season, data = seawater)
+seawater.DOC = kruskal.test(DOC ~ Season, data = seawater)
+seawater.CobleA = kruskal.test(CobleA ~ Season, data = seawater)
+seawater.CobleB = kruskal.test(CobleB ~ Season, data = seawater)
+seawater.CobleC = kruskal.test(CobleC ~ Season, data = seawater)
+seawater.CobleM = kruskal.test(CobleM ~ Season, data = seawater)
+seawater.CobleT = kruskal.test(CobleT ~ Season, data = seawater)
+seawater.Fpeak = kruskal.test(Fpeak ~ Season, data = seawater)
+seawater.Stedmon_D = kruskal.test(Stedmon_D ~ Season, data = seawater)
+seawater.Optical_Brighteners = kruskal.test(Optical_Brighteners ~ Season, data = seawater)
+seawater.Lignin = kruskal.test(Lignin ~ Season, data = seawater)
+seawater.HIX = kruskal.test(HIX ~ Season, data = seawater)
+seawater.BIX = kruskal.test(BIX ~ Season, data = seawater)
+seawater.FI = kruskal.test(FI ~ Season, data = seawater)
+seawater.M_C = kruskal.test(M_to_C ~ Season, data = seawater)
+
+
+```
+
+### B. Adjust p-values
+```{r adjust p-values}
+# make a vector of all p-values
+pvalues.cluster.season = c(shallow.salinity$p.value, shallow.temperature$p.value, shallow.DO$p.value, shallow.pH$p.value, shallow.ammonium$p.value, shallow.nitrate$p.value, shallow.nitrite$p.value, shallow.phosphate$p.value, shallow.cells$p.value, shallow.DOC$p.value, shallow.CobleA$p.value, shallow.CobleB$p.value, shallow.CobleC$p.value, shallow.CobleM$p.value, shallow.CobleT$p.value, shallow.Fpeak$p.value, shallow.Stedmon_D$p.value, shallow.Optical_Brighteners$p.value, shallow.Lignin$p.value, shallow.HIX$p.value, shallow.BIX$p.value, shallow.FI$p.value, shallow.M_C$p.value,
+                          
+                           intermediate.salinity$p.value, intermediate.temperature$p.value, intermediate.DO$p.value, intermediate.pH$p.value, intermediate.ammonium$p.value, intermediate.nitrate$p.value, intermediate.nitrite$p.value, intermediate.phosphate$p.value, intermediate.cells$p.value, intermediate.DOC$p.value, intermediate.CobleA$p.value, intermediate.CobleB$p.value, intermediate.CobleC$p.value, intermediate.CobleM$p.value, intermediate.CobleT$p.value, intermediate.Fpeak$p.value, intermediate.Stedmon_D$p.value, intermediate.Optical_Brighteners$p.value, intermediate.Lignin$p.value, intermediate.HIX$p.value, intermediate.BIX$p.value, intermediate.FI$p.value, intermediate.M_C$p.value,
+                          deep.salinity$p.value, deep.temperature$p.value, deep.DO$p.value, deep.pH$p.value, deep.ammonium$p.value, deep.nitrate$p.value, deep.nitrite$p.value, deep.phosphate$p.value, deep.cells$p.value, deep.DOC$p.value, deep.CobleA$p.value, deep.CobleB$p.value, deep.CobleC$p.value, deep.CobleM$p.value, deep.CobleT$p.value, deep.Fpeak$p.value, deep.Stedmon_D$p.value, deep.Optical_Brighteners$p.value, deep.Lignin$p.value, deep.HIX$p.value, deep.BIX$p.value, deep.FI$p.value, deep.M_C$p.value,
+                          
+                          well4.salinity$p.value, well4.temperature$p.value, well4.DO$p.value, well4.pH$p.value, well4.ammonium$p.value, well4.nitrate$p.value, well4.nitrite$p.value, well4.phosphate$p.value, well4.cells$p.value, well4.DOC$p.value, well4.CobleA$p.value, well4.CobleB$p.value, well4.CobleC$p.value, well4.CobleM$p.value, well4.CobleT$p.value, well4.Fpeak$p.value, well4.Stedmon_D$p.value, well4.Optical_Brighteners$p.value, well4.Lignin$p.value, well4.HIX$p.value, well4.BIX$p.value, well4.FI$p.value, well4.M_C$p.value,
+                          
+                          seawater.salinity$p.value, seawater.temperature$p.value, seawater.DO$p.value, seawater.pH$p.value, seawater.ammonium$p.value, seawater.nitrate$p.value, seawater.nitrite$p.value, seawater.phosphate$p.value, seawater.cells$p.value, seawater.DOC$p.value, seawater.CobleA$p.value, seawater.CobleB$p.value, seawater.CobleC$p.value, seawater.CobleM$p.value, seawater.CobleT$p.value, seawater.Fpeak$p.value, seawater.Stedmon_D$p.value, seawater.Optical_Brighteners$p.value, seawater.Lignin$p.value, seawater.HIX$p.value, seawater.BIX$p.value, seawater.FI$p.value, seawater.M_C$p.value)
+
+# adjust p-values
+pvalues.cluster.season.BH = p.adjust(pvalues.cluster.season, method="BH")
+pvalues.cluster.season.Bonf = p.adjust(pvalues.cluster.season, method="bonferroni")
+
+# make a dataframe of p-values
+pvalues.cluster.season.df = data.frame(pvalues.cluster.season, pvalues.cluster.season.BH, pvalues.cluster.season.Bonf)
+
+#write.csv(pvalues.cluster.season.df, "pvalues.cluster.season_2024.05.22.csv", row.names = F)
+
+
+```
+
+
+## 3. Within each region/cluster and season ~ Tide, Tide Regime
+
+### A. Run tests for February 2022
+```{r february shallow test of tide and tide.regime}
+# subset to february and shallow cluster
+feb_shallow = subset(chem, cluster == "Shallow" & Season == "February 2022")
+
+# test tide for all variables
+feb_shallow.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_shallow)
+feb_shallow.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_shallow)
+feb_shallow.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_shallow)
+feb_shallow.pH.tide = kruskal.test(pH ~ Tide, data = feb_shallow)
+feb_shallow.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_shallow)
+feb_shallow.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_shallow)
+feb_shallow.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_shallow)
+feb_shallow.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_shallow)
+feb_shallow.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_shallow)
+feb_shallow.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_shallow)
+feb_shallow.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_shallow)
+feb_shallow.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_shallow)
+feb_shallow.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_shallow)
+feb_shallow.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_shallow)
+feb_shallow.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_shallow)
+feb_shallow.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_shallow)
+feb_shallow.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_shallow)
+feb_shallow.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_shallow)
+feb_shallow.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_shallow)
+feb_shallow.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_shallow)
+feb_shallow.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_shallow)
+feb_shallow.FI.tide = kruskal.test(FI ~ Tide, data = feb_shallow)
+feb_shallow.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_shallow)
+
+# test tide.regime
+feb_shallow.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = feb_shallow)
+feb_shallow.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = feb_shallow)
+feb_shallow.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = feb_shallow)
+feb_shallow.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = feb_shallow)
+feb_shallow.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = feb_shallow)
+feb_shallow.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = feb_shallow)
+feb_shallow.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = feb_shallow)
+feb_shallow.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = feb_shallow)
+feb_shallow.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = feb_shallow)
+feb_shallow.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = feb_shallow)
+feb_shallow.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = feb_shallow)
+feb_shallow.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = feb_shallow)
+feb_shallow.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = feb_shallow)
+feb_shallow.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = feb_shallow)
+feb_shallow.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = feb_shallow)
+feb_shallow.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = feb_shallow)
+feb_shallow.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = feb_shallow)
+feb_shallow.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = feb_shallow)
+feb_shallow.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = feb_shallow)
+feb_shallow.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = feb_shallow)
+feb_shallow.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = feb_shallow)
+feb_shallow.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = feb_shallow)
+feb_shallow.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = feb_shallow)
+
+```
+
+```{r february intermediate test of tide and tide.regime}
+# subset to february and intermediate cluster
+feb_intermediate = subset(chem, cluster == "Intermediate" & Season == "February 2022")
+
+# test tide for all variables
+feb_intermediate.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_intermediate)
+feb_intermediate.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_intermediate)
+feb_intermediate.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_intermediate)
+feb_intermediate.pH.tide = kruskal.test(pH ~ Tide, data = feb_intermediate)
+feb_intermediate.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_intermediate)
+feb_intermediate.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_intermediate)
+feb_intermediate.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_intermediate)
+feb_intermediate.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_intermediate)
+feb_intermediate.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_intermediate)
+feb_intermediate.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_intermediate)
+feb_intermediate.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_intermediate)
+feb_intermediate.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_intermediate)
+feb_intermediate.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_intermediate)
+feb_intermediate.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_intermediate)
+feb_intermediate.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_intermediate)
+feb_intermediate.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_intermediate)
+feb_intermediate.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_intermediate)
+feb_intermediate.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_intermediate)
+feb_intermediate.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_intermediate)
+feb_intermediate.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_intermediate)
+feb_intermediate.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_intermediate)
+feb_intermediate.FI.tide = kruskal.test(FI ~ Tide, data = feb_intermediate)
+feb_intermediate.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_intermediate)
+
+# test tide.regime
+feb_intermediate.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = feb_intermediate)
+feb_intermediate.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = feb_intermediate)
+
+```
+
+```{r february deep test of tide and tide.regime}
+# subset to february and deep cluster
+feb_deep = subset(chem, cluster == "Deep" & Season == "February 2022")
+
+# test tide for all variables
+feb_deep.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_deep)
+feb_deep.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_deep)
+feb_deep.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_deep)
+feb_deep.pH.tide = kruskal.test(pH ~ Tide, data = feb_deep)
+feb_deep.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_deep)
+feb_deep.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_deep)
+feb_deep.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_deep)
+feb_deep.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_deep)
+feb_deep.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_deep)
+feb_deep.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_deep)
+feb_deep.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_deep)
+feb_deep.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_deep)
+feb_deep.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_deep)
+feb_deep.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_deep)
+feb_deep.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_deep)
+feb_deep.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_deep)
+feb_deep.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_deep)
+feb_deep.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_deep)
+feb_deep.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_deep)
+feb_deep.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_deep)
+feb_deep.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_deep)
+feb_deep.FI.tide = kruskal.test(FI ~ Tide, data = feb_deep)
+feb_deep.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_deep)
+
+# test tide.regime
+feb_deep.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = feb_deep)
+feb_deep.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = feb_deep)
+feb_deep.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = feb_deep)
+feb_deep.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = feb_deep)
+feb_deep.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = feb_deep)
+feb_deep.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = feb_deep)
+feb_deep.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = feb_deep)
+feb_deep.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = feb_deep)
+feb_deep.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = feb_deep)
+feb_deep.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = feb_deep)
+feb_deep.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = feb_deep)
+feb_deep.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = feb_deep)
+feb_deep.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = feb_deep)
+feb_deep.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = feb_deep)
+feb_deep.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = feb_deep)
+feb_deep.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = feb_deep)
+feb_deep.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = feb_deep)
+feb_deep.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = feb_deep)
+feb_deep.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = feb_deep)
+feb_deep.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = feb_deep)
+feb_deep.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = feb_deep)
+feb_deep.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = feb_deep)
+feb_deep.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = feb_deep)
+
+```
+
+```{r february well4 test of tide and tide.regime}
+# subset to february and well4 cluster
+feb_well4 = subset(chem, cluster == "Well 4" & Season == "February 2022")
+
+# test tide for all variables
+feb_well4.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_well4)
+feb_well4.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_well4)
+feb_well4.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_well4)
+feb_well4.pH.tide = kruskal.test(pH ~ Tide, data = feb_well4)
+feb_well4.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_well4)
+feb_well4.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_well4)
+feb_well4.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_well4)
+feb_well4.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_well4)
+feb_well4.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_well4)
+feb_well4.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_well4)
+feb_well4.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_well4)
+feb_well4.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_well4)
+feb_well4.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_well4)
+feb_well4.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_well4)
+feb_well4.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_well4)
+feb_well4.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_well4)
+feb_well4.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_well4)
+feb_well4.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_well4)
+feb_well4.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_well4)
+feb_well4.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_well4)
+feb_well4.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_well4)
+feb_well4.FI.tide = kruskal.test(FI ~ Tide, data = feb_well4)
+feb_well4.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_well4)
+
+# test tide.regime
+feb_well4.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = feb_well4)
+feb_well4.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = feb_well4)
+feb_well4.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = feb_well4)
+feb_well4.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = feb_well4)
+feb_well4.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = feb_well4)
+feb_well4.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = feb_well4)
+feb_well4.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = feb_well4)
+feb_well4.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = feb_well4)
+feb_well4.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = feb_well4)
+feb_well4.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = feb_well4)
+feb_well4.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = feb_well4)
+feb_well4.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = feb_well4)
+feb_well4.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = feb_well4)
+feb_well4.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = feb_well4)
+feb_well4.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = feb_well4)
+feb_well4.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = feb_well4)
+feb_well4.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = feb_well4)
+feb_well4.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = feb_well4)
+feb_well4.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = feb_well4)
+feb_well4.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = feb_well4)
+feb_well4.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = feb_well4)
+feb_well4.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = feb_well4)
+feb_well4.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = feb_well4)
+
+```
+
+### B. Adjust p-values
+```{r adjust p-values Feb cluster tide}
+# make a vector of all p-values for tide
+pvalues.feb.cluster.tide = c(
+  feb_shallow.salinity.tide$p.value, feb_shallow.temperature.tide$p.value, feb_shallow.DO.tide$p.value, feb_shallow.pH.tide$p.value, feb_shallow.ammonium.tide$p.value, feb_shallow.nitrate.tide$p.value, feb_shallow.nitrite.tide$p.value, feb_shallow.phosphate.tide$p.value, feb_shallow.cells.tide$p.value, feb_shallow.DOC.tide$p.value, feb_shallow.CobleA.tide$p.value, feb_shallow.CobleB.tide$p.value, feb_shallow.CobleC.tide$p.value, feb_shallow.CobleM.tide$p.value, feb_shallow.CobleT.tide$p.value, feb_shallow.Fpeak.tide$p.value, feb_shallow.Stedmon_D.tide$p.value, feb_shallow.Optical_Brighteners.tide$p.value, feb_shallow.Lignin.tide$p.value, feb_shallow.HIX.tide$p.value, feb_shallow.BIX.tide$p.value, feb_shallow.FI.tide$p.value, feb_shallow.M_C.tide$p.value,
+  
+  feb_intermediate.salinity.tide$p.value, feb_intermediate.temperature.tide$p.value, feb_intermediate.DO.tide$p.value, feb_intermediate.pH.tide$p.value, feb_intermediate.ammonium.tide$p.value, feb_intermediate.nitrate.tide$p.value, feb_intermediate.nitrite.tide$p.value, feb_intermediate.phosphate.tide$p.value, feb_intermediate.cells.tide$p.value, feb_intermediate.DOC.tide$p.value, feb_intermediate.CobleA.tide$p.value, feb_intermediate.CobleB.tide$p.value, feb_intermediate.CobleC.tide$p.value, feb_intermediate.CobleM.tide$p.value, feb_intermediate.CobleT.tide$p.value, feb_intermediate.Fpeak.tide$p.value, feb_intermediate.Stedmon_D.tide$p.value, feb_intermediate.Optical_Brighteners.tide$p.value, feb_intermediate.Lignin.tide$p.value, feb_intermediate.HIX.tide$p.value, feb_intermediate.BIX.tide$p.value, feb_intermediate.FI.tide$p.value, feb_intermediate.M_C.tide$p.value,
+  
+  feb_deep.salinity.tide$p.value, feb_deep.temperature.tide$p.value, feb_deep.DO.tide$p.value, feb_deep.pH.tide$p.value, feb_deep.ammonium.tide$p.value, feb_deep.nitrate.tide$p.value, feb_deep.nitrite.tide$p.value, feb_deep.phosphate.tide$p.value, feb_deep.cells.tide$p.value, feb_deep.DOC.tide$p.value, feb_deep.CobleA.tide$p.value, feb_deep.CobleB.tide$p.value, feb_deep.CobleC.tide$p.value, feb_deep.CobleM.tide$p.value, feb_deep.CobleT.tide$p.value, feb_deep.Fpeak.tide$p.value, feb_deep.Stedmon_D.tide$p.value, feb_deep.Optical_Brighteners.tide$p.value, feb_deep.Lignin.tide$p.value, feb_deep.HIX.tide$p.value, feb_deep.BIX.tide$p.value, feb_deep.FI.tide$p.value, feb_deep.M_C.tide$p.value,
+  
+  feb_well4.salinity.tide$p.value, feb_well4.temperature.tide$p.value, feb_well4.DO.tide$p.value, feb_well4.pH.tide$p.value, feb_well4.ammonium.tide$p.value, feb_well4.nitrate.tide$p.value, feb_well4.nitrite.tide$p.value, feb_well4.phosphate.tide$p.value, feb_well4.cells.tide$p.value, feb_well4.DOC.tide$p.value, feb_well4.CobleA.tide$p.value, feb_well4.CobleB.tide$p.value, feb_well4.CobleC.tide$p.value, feb_well4.CobleM.tide$p.value, feb_well4.CobleT.tide$p.value, feb_well4.Fpeak.tide$p.value, feb_well4.Stedmon_D.tide$p.value, feb_well4.Optical_Brighteners.tide$p.value, feb_well4.Lignin.tide$p.value, feb_well4.HIX.tide$p.value, feb_well4.BIX.tide$p.value, feb_well4.FI.tide$p.value, feb_well4.M_C.tide$p.value)
+
+# adjust p-values
+pvalues.feb.cluster.tide.BH = p.adjust(pvalues.feb.cluster.tide, method="BH")
+pvalues.feb.cluster.tide.Bonf = p.adjust(pvalues.feb.cluster.tide, method="bonferroni")
+
+# make a dataframe of p-values
+pvalues.feb.cluster.tide.df = data.frame(pvalues.feb.cluster.tide, pvalues.feb.cluster.tide.BH, pvalues.feb.cluster.tide.Bonf)
+
+# write csv
+#write.csv(pvalues.feb.cluster.tide.df, "pvalues.feb.cluster.tide_2024.05.22.csv", row.names = F)
+
+```
+
+```{r adjust p-values Feb cluster tide.regime}
+# make a vector of all p-values for tide.regime
+pvalues.feb.cluster.tide.regime = c(
+  feb_shallow.salinity.tide.regime$p.value, feb_shallow.temperature.tide.regime$p.value, feb_shallow.DO.tide.regime$p.value, feb_shallow.pH.tide.regime$p.value, feb_shallow.ammonium.tide.regime$p.value, feb_shallow.nitrate.tide.regime$p.value, feb_shallow.nitrite.tide.regime$p.value, feb_shallow.phosphate.tide.regime$p.value, feb_shallow.cells.tide.regime$p.value, feb_shallow.DOC.tide.regime$p.value, feb_shallow.CobleA.tide.regime$p.value, feb_shallow.CobleB.tide.regime$p.value, feb_shallow.CobleC.tide.regime$p.value, feb_shallow.CobleM.tide.regime$p.value, feb_shallow.CobleT.tide.regime$p.value, feb_shallow.Fpeak.tide.regime$p.value, feb_shallow.Stedmon_D.tide.regime$p.value, feb_shallow.Optical_Brighteners.tide.regime$p.value, feb_shallow.Lignin.tide.regime$p.value, feb_shallow.HIX.tide.regime$p.value, feb_shallow.BIX.tide.regime$p.value, feb_shallow.FI.tide.regime$p.value, feb_shallow.M_C.tide.regime$p.value,
+  
+  feb_intermediate.salinity.tide.regime$p.value, feb_intermediate.temperature.tide.regime$p.value, feb_intermediate.DO.tide.regime$p.value, feb_intermediate.pH.tide.regime$p.value, feb_intermediate.ammonium.tide.regime$p.value, feb_intermediate.nitrate.tide.regime$p.value, feb_intermediate.nitrite.tide.regime$p.value, feb_intermediate.phosphate.tide.regime$p.value, feb_intermediate.cells.tide.regime$p.value, feb_intermediate.DOC.tide.regime$p.value, feb_intermediate.CobleA.tide.regime$p.value, feb_intermediate.CobleB.tide.regime$p.value, feb_intermediate.CobleC.tide.regime$p.value, feb_intermediate.CobleM.tide.regime$p.value, feb_intermediate.CobleT.tide.regime$p.value, feb_intermediate.Fpeak.tide.regime$p.value, feb_intermediate.Stedmon_D.tide.regime$p.value, feb_intermediate.Optical_Brighteners.tide.regime$p.value, feb_intermediate.Lignin.tide.regime$p.value, feb_intermediate.HIX.tide.regime$p.value, feb_intermediate.BIX.tide.regime$p.value, feb_intermediate.FI.tide.regime$p.value, feb_intermediate.M_C.tide.regime$p.value,
+  
+  feb_deep.salinity.tide.regime$p.value, feb_deep.temperature.tide.regime$p.value, feb_deep.DO.tide.regime$p.value, feb_deep.pH.tide.regime$p.value, feb_deep.ammonium.tide.regime$p.value, feb_deep.nitrate.tide.regime$p.value, feb_deep.nitrite.tide.regime$p.value, feb_deep.phosphate.tide.regime$p.value, feb_deep.cells.tide.regime$p.value, feb_deep.DOC.tide.regime$p.value, feb_deep.CobleA.tide.regime$p.value, feb_deep.CobleB.tide.regime$p.value, feb_deep.CobleC.tide.regime$p.value, feb_deep.CobleM.tide.regime$p.value, feb_deep.CobleT.tide.regime$p.value, feb_deep.Fpeak.tide.regime$p.value, feb_deep.Stedmon_D.tide.regime$p.value, feb_deep.Optical_Brighteners.tide.regime$p.value, feb_deep.Lignin.tide.regime$p.value, feb_deep.HIX.tide.regime$p.value, feb_deep.BIX.tide.regime$p.value, feb_deep.FI.tide.regime$p.value, feb_deep.M_C.tide.regime$p.value,
+  
+  feb_well4.salinity.tide.regime$p.value, feb_well4.temperature.tide.regime$p.value, feb_well4.DO.tide.regime$p.value, feb_well4.pH.tide.regime$p.value, feb_well4.ammonium.tide.regime$p.value, feb_well4.nitrate.tide.regime$p.value, feb_well4.nitrite.tide.regime$p.value, feb_well4.phosphate.tide.regime$p.value, feb_well4.cells.tide.regime$p.value, feb_well4.DOC.tide.regime$p.value, feb_well4.CobleA.tide.regime$p.value, feb_well4.CobleB.tide.regime$p.value, feb_well4.CobleC.tide.regime$p.value, feb_well4.CobleM.tide.regime$p.value, feb_well4.CobleT.tide.regime$p.value, feb_well4.Fpeak.tide.regime$p.value, feb_well4.Stedmon_D.tide.regime$p.value, feb_well4.Optical_Brighteners.tide.regime$p.value, feb_well4.Lignin.tide.regime$p.value, feb_well4.HIX.tide.regime$p.value, feb_well4.BIX.tide.regime$p.value, feb_well4.FI.tide.regime$p.value, feb_well4.M_C.tide.regime$p.value)
+
+# adjust p-values
+pvalues.feb.cluster.tide.regime.BH = p.adjust(pvalues.feb.cluster.tide.regime, method="BH")
+pvalues.feb.cluster.tide.regime.Bonf = p.adjust(pvalues.feb.cluster.tide.regime, method="bonferroni")
+
+# make a dataframe of p-values
+pvalues.feb.cluster.tide.regime.df = data.frame(pvalues.feb.cluster.tide.regime, pvalues.feb.cluster.tide.regime.BH, pvalues.feb.cluster.tide.regime.Bonf)
+
+# write csv
+#write.csv(pvalues.feb.cluster.tide.regime.df, "pvalues.feb.cluster.tide.regime_2024.05.22.csv", row.names = F)
+
+
+```
+
+
+### C. Run test for October 2022
+```{r october shallow test of tide and tide.regime}
+# subset to october and shallow cluster
+oct_shallow = subset(chem, cluster == "Shallow" & Season == "October 2022")
+oct_shallow_noM = subset(oct_shallow, Tide != "Mid")
+
+# test tide for all variables
+oct_shallow.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_shallow_noM)
+oct_shallow.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_shallow_noM)
+oct_shallow.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_shallow_noM)
+oct_shallow.pH.tide = kruskal.test(pH ~ Tide, data = oct_shallow_noM)
+oct_shallow.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_shallow_noM)
+oct_shallow.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_shallow_noM)
+oct_shallow.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_shallow_noM)
+oct_shallow.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_shallow_noM)
+
+
+# test tide.regime
+oct_shallow.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = oct_shallow)
+oct_shallow.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = oct_shallow)
+oct_shallow.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = oct_shallow)
+oct_shallow.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = oct_shallow)
+oct_shallow.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = oct_shallow)
+oct_shallow.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = oct_shallow)
+oct_shallow.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = oct_shallow)
+oct_shallow.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = oct_shallow)
+oct_shallow.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = oct_shallow)
+oct_shallow.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = oct_shallow)
+oct_shallow.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = oct_shallow)
+oct_shallow.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = oct_shallow)
+oct_shallow.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = oct_shallow)
+oct_shallow.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = oct_shallow)
+oct_shallow.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = oct_shallow)
+oct_shallow.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = oct_shallow)
+oct_shallow.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = oct_shallow)
+oct_shallow.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = oct_shallow)
+oct_shallow.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = oct_shallow)
+oct_shallow.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = oct_shallow)
+oct_shallow.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = oct_shallow)
+oct_shallow.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = oct_shallow)
+oct_shallow.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = oct_shallow)
+
+```
+
+```{r october intermediate test of tide and tide.regime}
+# subset to october and intermediate cluster
+oct_intermediate = subset(chem, cluster == "Intermediate" & Season == "October 2022")
+oct_intermediate_noM = subset(oct_intermediate, Tide != "Mid")
+
+# test tide for all variables
+oct_intermediate.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_intermediate_noM)
+oct_intermediate.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_intermediate_noM)
+oct_intermediate.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_intermediate_noM)
+oct_intermediate.pH.tide = kruskal.test(pH ~ Tide, data = oct_intermediate_noM)
+oct_intermediate.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_intermediate_noM)
+oct_intermediate.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_intermediate_noM)
+oct_intermediate.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_intermediate_noM)
+oct_intermediate.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_intermediate_noM)
+
+
+# test tide.regime
+oct_intermediate.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = oct_intermediate)
+oct_intermediate.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = oct_intermediate)
+
+```
+
+```{r october deep test of tide and tide.regime}
+# subset to october and deep cluster
+oct_deep = subset(chem, cluster == "Deep" & Season == "October 2022")
+oct_deep_noM = subset(oct_deep, Tide != "Mid")
+
+# test tide for all variables
+oct_deep.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_deep_noM)
+oct_deep.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_deep_noM)
+oct_deep.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_deep_noM)
+oct_deep.pH.tide = kruskal.test(pH ~ Tide, data = oct_deep_noM)
+oct_deep.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_deep_noM)
+oct_deep.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_deep_noM)
+oct_deep.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_deep_noM)
+oct_deep.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_deep_noM)
+
+
+# test tide.regime
+oct_deep.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = oct_deep)
+oct_deep.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = oct_deep)
+oct_deep.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = oct_deep)
+oct_deep.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = oct_deep)
+oct_deep.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = oct_deep)
+oct_deep.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = oct_deep)
+oct_deep.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = oct_deep)
+oct_deep.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = oct_deep)
+oct_deep.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = oct_deep)
+oct_deep.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = oct_deep)
+oct_deep.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = oct_deep)
+oct_deep.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = oct_deep)
+oct_deep.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = oct_deep)
+oct_deep.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = oct_deep)
+oct_deep.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = oct_deep)
+oct_deep.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = oct_deep)
+oct_deep.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = oct_deep)
+oct_deep.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = oct_deep)
+oct_deep.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = oct_deep)
+oct_deep.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = oct_deep)
+oct_deep.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = oct_deep)
+oct_deep.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = oct_deep)
+oct_deep.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = oct_deep)
+
+```
+
+```{r october well4 test of tide and tide.regime}
+# subset to october and well4 cluster
+oct_well4 = subset(chem, cluster == "Well 4" & Season == "October 2022")
+oct_well4_noM = subset(oct_well4, Tide != "Mid")
+
+# test tide for all variables
+oct_well4.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_well4_noM)
+oct_well4.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_well4_noM)
+oct_well4.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_well4_noM)
+oct_well4.pH.tide = kruskal.test(pH ~ Tide, data = oct_well4_noM)
+oct_well4.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_well4_noM)
+oct_well4.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_well4_noM)
+oct_well4.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_well4_noM)
+oct_well4.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_well4_noM)
+
+# test tide.regime
+oct_well4.salinity.tide.regime = kruskal.test(Salinity ~ Tide.regime, data = oct_well4)
+oct_well4.temperature.tide.regime = kruskal.test(Temperature ~ Tide.regime, data = oct_well4)
+oct_well4.DO.tide.regime = kruskal.test(DO_uM ~ Tide.regime, data = oct_well4)
+oct_well4.pH.tide.regime = kruskal.test(pH ~ Tide.regime, data = oct_well4)
+oct_well4.ammonium.tide.regime = kruskal.test(Ammonium ~ Tide.regime, data = oct_well4)
+oct_well4.nitrate.tide.regime = kruskal.test(Nitrate ~ Tide.regime, data = oct_well4)
+oct_well4.nitrite.tide.regime = kruskal.test(Nitrite ~ Tide.regime, data = oct_well4)
+oct_well4.phosphate.tide.regime = kruskal.test(Phosphate ~ Tide.regime, data = oct_well4)
+oct_well4.cells.tide.regime = kruskal.test(Cells_mL ~ Tide.regime, data = oct_well4)
+oct_well4.DOC.tide.regime = kruskal.test(DOC ~ Tide.regime, data = oct_well4)
+oct_well4.CobleA.tide.regime = kruskal.test(CobleA ~ Tide.regime, data = oct_well4)
+oct_well4.CobleB.tide.regime = kruskal.test(CobleB ~ Tide.regime, data = oct_well4)
+oct_well4.CobleC.tide.regime = kruskal.test(CobleC ~ Tide.regime, data = oct_well4)
+oct_well4.CobleM.tide.regime = kruskal.test(CobleM ~ Tide.regime, data = oct_well4)
+oct_well4.CobleT.tide.regime = kruskal.test(CobleT ~ Tide.regime, data = oct_well4)
+oct_well4.Fpeak.tide.regime = kruskal.test(Fpeak ~ Tide.regime, data = oct_well4)
+oct_well4.Stedmon_D.tide.regime = kruskal.test(Stedmon_D ~ Tide.regime, data = oct_well4)
+oct_well4.Optical_Brighteners.tide.regime = kruskal.test(Optical_Brighteners ~ Tide.regime, data = oct_well4)
+oct_well4.Lignin.tide.regime = kruskal.test(Lignin ~ Tide.regime, data = oct_well4)
+oct_well4.HIX.tide.regime = kruskal.test(HIX ~ Tide.regime, data = oct_well4)
+oct_well4.BIX.tide.regime = kruskal.test(BIX ~ Tide.regime, data = oct_well4)
+oct_well4.FI.tide.regime = kruskal.test(FI ~ Tide.regime, data = oct_well4)
+oct_well4.M_C.tide.regime = kruskal.test(M_to_C ~ Tide.regime, data = oct_well4)
+
+```
+
+
+### D. Adjust p-values 
+```{r adjust p-values Oct cluster tide}
+# make a vector of all p-values for tide
+pvalues.oct.cluster.tide = c(oct_shallow.salinity.tide$p.value, oct_shallow.temperature.tide$p.value, oct_shallow.DO.tide$p.value, oct_shallow.pH.tide$p.value, oct_shallow.ammonium.tide$p.value, oct_shallow.nitrate.tide$p.value, oct_shallow.nitrite.tide$p.value, oct_shallow.phosphate.tide$p.value, 
+                             
+oct_intermediate.salinity.tide$p.value, oct_intermediate.temperature.tide$p.value, oct_intermediate.DO.tide$p.value, oct_intermediate.pH.tide$p.value, oct_intermediate.ammonium.tide$p.value, oct_intermediate.nitrate.tide$p.value, oct_intermediate.nitrite.tide$p.value, oct_intermediate.phosphate.tide$p.value, 
+
+oct_deep.salinity.tide$p.value, oct_deep.temperature.tide$p.value, oct_deep.DO.tide$p.value, oct_deep.pH.tide$p.value, oct_deep.ammonium.tide$p.value, oct_deep.nitrate.tide$p.value, oct_deep.nitrite.tide$p.value, oct_deep.phosphate.tide$p.value, 
+oct_well4.salinity.tide$p.value, oct_well4.temperature.tide$p.value, oct_well4.DO.tide$p.value, oct_well4.pH.tide$p.value, oct_well4.ammonium.tide$p.value, oct_well4.nitrate.tide$p.value, oct_well4.nitrite.tide$p.value, oct_well4.phosphate.tide$p.value)
+
+# adjust p-values
+pvalues.oct.cluster.tide.BH = p.adjust(pvalues.oct.cluster.tide, method="BH")
+pvalues.oct.cluster.tide.Bonf = p.adjust(pvalues.oct.cluster.tide, method="bonferroni")
+
+# make a dataframe of p-values
+pvalues.oct.cluster.tide.df = data.frame(pvalues.oct.cluster.tide, pvalues.oct.cluster.tide.BH, pvalues.oct.cluster.tide.Bonf)
+
+# write csv
+write.csv(pvalues.oct.cluster.tide.df, "pvalues.oct.cluster.tide_2024.05.22.csv", row.names = F)
+
+```
+
+```{r adjust p-values Oct cluster tide.regime}
+# make a vector of all p-values for tide.regime
+pvalues.oct.cluster.tide.regime = c(oct_shallow.salinity.tide.regime$p.value, oct_shallow.temperature.tide.regime$p.value, oct_shallow.DO.tide.regime$p.value, oct_shallow.pH.tide.regime$p.value, oct_shallow.ammonium.tide.regime$p.value, oct_shallow.nitrate.tide.regime$p.value, oct_shallow.nitrite.tide.regime$p.value, oct_shallow.phosphate.tide.regime$p.value, oct_shallow.cells.tide.regime$p.value, oct_shallow.DOC.tide.regime$p.value, oct_shallow.CobleA.tide.regime$p.value, oct_shallow.CobleB.tide.regime$p.value, oct_shallow.CobleC.tide.regime$p.value, oct_shallow.CobleM.tide.regime$p.value, oct_shallow.CobleT.tide.regime$p.value, oct_shallow.Fpeak.tide.regime$p.value, oct_shallow.Stedmon_D.tide.regime$p.value, oct_shallow.Optical_Brighteners.tide.regime$p.value, oct_shallow.Lignin.tide.regime$p.value, oct_shallow.HIX.tide.regime$p.value, oct_shallow.BIX.tide.regime$p.value, oct_shallow.FI.tide.regime$p.value, oct_shallow.M_C.tide.regime$p.value,
+oct_intermediate.salinity.tide.regime$p.value, oct_intermediate.temperature.tide.regime$p.value, oct_intermediate.DO.tide.regime$p.value, oct_intermediate.pH.tide.regime$p.value, oct_intermediate.ammonium.tide.regime$p.value, oct_intermediate.nitrate.tide.regime$p.value, oct_intermediate.nitrite.tide.regime$p.value, oct_intermediate.phosphate.tide.regime$p.value, oct_intermediate.cells.tide.regime$p.value, oct_intermediate.DOC.tide.regime$p.value, oct_intermediate.CobleA.tide.regime$p.value, oct_intermediate.CobleB.tide.regime$p.value, oct_intermediate.CobleC.tide.regime$p.value, oct_intermediate.CobleM.tide.regime$p.value, oct_intermediate.CobleT.tide.regime$p.value, oct_intermediate.Fpeak.tide.regime$p.value, oct_intermediate.Stedmon_D.tide.regime$p.value, oct_intermediate.Optical_Brighteners.tide.regime$p.value, oct_intermediate.Lignin.tide.regime$p.value, oct_intermediate.HIX.tide.regime$p.value, oct_intermediate.BIX.tide.regime$p.value, oct_intermediate.FI.tide.regime$p.value, oct_intermediate.M_C.tide.regime$p.value,
+oct_deep.salinity.tide.regime$p.value, oct_deep.temperature.tide.regime$p.value, oct_deep.DO.tide.regime$p.value, oct_deep.pH.tide.regime$p.value, oct_deep.ammonium.tide.regime$p.value, oct_deep.nitrate.tide.regime$p.value, oct_deep.nitrite.tide.regime$p.value, oct_deep.phosphate.tide.regime$p.value, oct_deep.cells.tide.regime$p.value, oct_deep.DOC.tide.regime$p.value, oct_deep.CobleA.tide.regime$p.value, oct_deep.CobleB.tide.regime$p.value, oct_deep.CobleC.tide.regime$p.value, oct_deep.CobleM.tide.regime$p.value, oct_deep.CobleT.tide.regime$p.value, oct_deep.Fpeak.tide.regime$p.value, oct_deep.Stedmon_D.tide.regime$p.value, oct_deep.Optical_Brighteners.tide.regime$p.value, oct_deep.Lignin.tide.regime$p.value, oct_deep.HIX.tide.regime$p.value, oct_deep.BIX.tide.regime$p.value, oct_deep.FI.tide.regime$p.value, oct_deep.M_C.tide.regime$p.value,
+oct_well4.salinity.tide.regime$p.value, oct_well4.temperature.tide.regime$p.value, oct_well4.DO.tide.regime$p.value, oct_well4.pH.tide.regime$p.value, oct_well4.ammonium.tide.regime$p.value, oct_well4.nitrate.tide.regime$p.value, oct_well4.nitrite.tide.regime$p.value, oct_well4.phosphate.tide.regime$p.value, oct_well4.cells.tide.regime$p.value, oct_well4.DOC.tide.regime$p.value, oct_well4.CobleA.tide.regime$p.value, oct_well4.CobleB.tide.regime$p.value, oct_well4.CobleC.tide.regime$p.value, oct_well4.CobleM.tide.regime$p.value, oct_well4.CobleT.tide.regime$p.value, oct_well4.Fpeak.tide.regime$p.value, oct_well4.Stedmon_D.tide.regime$p.value, oct_well4.Optical_Brighteners.tide.regime$p.value, oct_well4.Lignin.tide.regime$p.value, oct_well4.HIX.tide.regime$p.value, oct_well4.BIX.tide.regime$p.value, oct_well4.FI.tide.regime$p.value, oct_well4.M_C.tide.regime$p.value)
+
+# adjust p-values
+pvalues.oct.cluster.tide.regime.BH = p.adjust(pvalues.oct.cluster.tide.regime, method="BH")
+pvalues.oct.cluster.tide.regime.Bonf = p.adjust(pvalues.oct.cluster.tide.regime, method="bonferroni")
+
+# make a dataframe of p-values
+pvalues.oct.cluster.tide.regime.df = data.frame(pvalues.oct.cluster.tide.regime, pvalues.oct.cluster.tide.regime.BH, pvalues.oct.cluster.tide.regime.Bonf)
+
+# write csv
+write.csv(pvalues.oct.cluster.tide.regime.df, "pvalues.oct.cluster.tide.regime_2024.05.22.csv", row.names = F)
+
+```
+
+```{r median values for season cluster tide}
+season_cluster_tide_median = chem %>% 
+    group_by(Season, cluster, Tide) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+
+oct_tide_median = subset(chem, Season == "October 2022") %>% 
+    group_by( Tide) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+```
+
+```{r median values for season cluster tide.regime}
+season_cluster_tide_regime_median = chem %>% 
+    group_by(Season, cluster, Tide.regime) %>% 
+    summarize_if(is.numeric, median, na.rm = T)
+```
+
+
+# 4. Within each season, cluster, tide.regime test effect of tide
+```{r february shallow spring tide}
+# subset to february and shallow cluster and spring tide.regime
+feb_shallow_spring = subset(chem, cluster == "Shallow" & Season == "February 2022" & Tide.regime == "Spring")
+
+# test tide for all variables
+feb_shallow_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.pH.tide = kruskal.test(pH ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.FI.tide = kruskal.test(FI ~ Tide, data = feb_shallow_spring)
+feb_shallow_spring.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_shallow_spring)
+
+```
+
+```{r february shallow neap tide}
+# subset to february and shallow cluster and neap tide.regime
+feb_shallow_neap = subset(chem, cluster == "Shallow" & Season == "February 2022" & Tide.regime == "Neap")
+
+# test tide for all variables
+feb_shallow_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.pH.tide = kruskal.test(pH ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.FI.tide = kruskal.test(FI ~ Tide, data = feb_shallow_neap)
+feb_shallow_neap.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_shallow_neap)
+
+```
+
+```{r february intermediate spring tide}
+# subset to february and intermediate cluster and spring tide.regime
+feb_intermediate_spring = subset(chem, cluster == "Intermediate" & Season == "February 2022" & Tide.regime == "Spring")
+
+# test tide for all variables
+feb_intermediate_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.pH.tide = kruskal.test(pH ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.FI.tide = kruskal.test(FI ~ Tide, data = feb_intermediate_spring)
+feb_intermediate_spring.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_intermediate_spring)
+
+```
+
+```{r february intermediate neap tide}
+# subset to february and intermediate cluster and neap tide.regime
+feb_intermediate_neap = subset(chem, cluster == "Intermediate" & Season == "February 2022" & Tide.regime == "Neap")
+
+# test tide for all variables
+feb_intermediate_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.pH.tide = kruskal.test(pH ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.FI.tide = kruskal.test(FI ~ Tide, data = feb_intermediate_neap)
+feb_intermediate_neap.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_intermediate_neap)
+
+```
+
+```{r february deep spring tide}
+# subset to february and deep cluster and spring tide.regime
+feb_deep_spring = subset(chem, cluster == "Deep" & Season == "February 2022" & Tide.regime == "Spring")
+
+# test tide for all variables
+feb_deep_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_deep_spring)
+feb_deep_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_deep_spring)
+feb_deep_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_deep_spring)
+feb_deep_spring.pH.tide = kruskal.test(pH ~ Tide, data = feb_deep_spring)
+feb_deep_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_deep_spring)
+feb_deep_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_deep_spring)
+feb_deep_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_deep_spring)
+feb_deep_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_deep_spring)
+feb_deep_spring.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_deep_spring)
+feb_deep_spring.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_deep_spring)
+feb_deep_spring.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_deep_spring)
+feb_deep_spring.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_deep_spring)
+feb_deep_spring.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_deep_spring)
+feb_deep_spring.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_deep_spring)
+feb_deep_spring.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_deep_spring)
+feb_deep_spring.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_deep_spring)
+feb_deep_spring.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_deep_spring)
+feb_deep_spring.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_deep_spring)
+feb_deep_spring.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_deep_spring)
+feb_deep_spring.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_deep_spring)
+feb_deep_spring.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_deep_spring)
+feb_deep_spring.FI.tide = kruskal.test(FI ~ Tide, data = feb_deep_spring)
+feb_deep_spring.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_deep_spring)
+
+```
+
+```{r february deep neap tide}
+# subset to february and deep cluster and neap tide.regime
+feb_deep_neap = subset(chem, cluster == "Deep" & Season == "February 2022" & Tide.regime == "Neap")
+
+# test tide for all variables
+feb_deep_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_deep_neap)
+feb_deep_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_deep_neap)
+feb_deep_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_deep_neap)
+feb_deep_neap.pH.tide = kruskal.test(pH ~ Tide, data = feb_deep_neap)
+feb_deep_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_deep_neap)
+feb_deep_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_deep_neap)
+feb_deep_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_deep_neap)
+feb_deep_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_deep_neap)
+feb_deep_neap.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_deep_neap)
+feb_deep_neap.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_deep_neap)
+feb_deep_neap.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_deep_neap)
+feb_deep_neap.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_deep_neap)
+feb_deep_neap.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_deep_neap)
+feb_deep_neap.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_deep_neap)
+feb_deep_neap.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_deep_neap)
+feb_deep_neap.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_deep_neap)
+feb_deep_neap.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_deep_neap)
+feb_deep_neap.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_deep_neap)
+feb_deep_neap.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_deep_neap)
+feb_deep_neap.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_deep_neap)
+feb_deep_neap.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_deep_neap)
+feb_deep_neap.FI.tide = kruskal.test(FI ~ Tide, data = feb_deep_neap)
+feb_deep_neap.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_deep_neap)
+
+```
+
+```{r february Well 4 spring tide}
+# subset to february and Well 4 cluster and spring tide.regime
+feb_well4_spring = subset(chem, cluster == "Well 4" & Season == "February 2022" & Tide.regime == "Spring")
+
+# test tide for all variables
+feb_well4_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_well4_spring)
+feb_well4_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_well4_spring)
+feb_well4_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_well4_spring)
+feb_well4_spring.pH.tide = kruskal.test(pH ~ Tide, data = feb_well4_spring)
+feb_well4_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_well4_spring)
+feb_well4_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_well4_spring)
+feb_well4_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_well4_spring)
+feb_well4_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_well4_spring)
+feb_well4_spring.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_well4_spring)
+feb_well4_spring.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_well4_spring)
+feb_well4_spring.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_well4_spring)
+feb_well4_spring.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_well4_spring)
+feb_well4_spring.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_well4_spring)
+feb_well4_spring.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_well4_spring)
+feb_well4_spring.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_well4_spring)
+feb_well4_spring.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_well4_spring)
+feb_well4_spring.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_well4_spring)
+feb_well4_spring.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_well4_spring)
+feb_well4_spring.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_well4_spring)
+feb_well4_spring.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_well4_spring)
+feb_well4_spring.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_well4_spring)
+feb_well4_spring.FI.tide = kruskal.test(FI ~ Tide, data = feb_well4_spring)
+feb_well4_spring.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_well4_spring)
+
+```
+
+```{r february Well 4 neap tide}
+# subset to february and Well 4 cluster and neap tide.regime
+feb_well4_neap = subset(chem, cluster == "Well 4" & Season == "February 2022" & Tide.regime == "Neap")
+
+# test tide for all variables
+feb_well4_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = feb_well4_neap)
+feb_well4_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = feb_well4_neap)
+feb_well4_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = feb_well4_neap)
+feb_well4_neap.pH.tide = kruskal.test(pH ~ Tide, data = feb_well4_neap)
+feb_well4_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = feb_well4_neap)
+feb_well4_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = feb_well4_neap)
+feb_well4_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = feb_well4_neap)
+feb_well4_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = feb_well4_neap)
+feb_well4_neap.cells.tide = kruskal.test(Cells_mL ~ Tide, data = feb_well4_neap)
+feb_well4_neap.DOC.tide = kruskal.test(DOC ~ Tide, data = feb_well4_neap)
+feb_well4_neap.CobleA.tide = kruskal.test(CobleA ~ Tide, data = feb_well4_neap)
+feb_well4_neap.CobleB.tide = kruskal.test(CobleB ~ Tide, data = feb_well4_neap)
+feb_well4_neap.CobleC.tide = kruskal.test(CobleC ~ Tide, data = feb_well4_neap)
+feb_well4_neap.CobleM.tide = kruskal.test(CobleM ~ Tide, data = feb_well4_neap)
+feb_well4_neap.CobleT.tide = kruskal.test(CobleT ~ Tide, data = feb_well4_neap)
+feb_well4_neap.Fpeak.tide = kruskal.test(Fpeak ~ Tide, data = feb_well4_neap)
+feb_well4_neap.Stedmon_D.tide = kruskal.test(Stedmon_D ~ Tide, data = feb_well4_neap)
+feb_well4_neap.Optical_Brighteners.tide = kruskal.test(Optical_Brighteners ~ Tide, data = feb_well4_neap)
+feb_well4_neap.Lignin.tide = kruskal.test(Lignin ~ Tide, data = feb_well4_neap)
+feb_well4_neap.HIX.tide = kruskal.test(HIX ~ Tide, data = feb_well4_neap)
+feb_well4_neap.BIX.tide = kruskal.test(BIX ~ Tide, data = feb_well4_neap)
+feb_well4_neap.FI.tide = kruskal.test(FI ~ Tide, data = feb_well4_neap)
+feb_well4_neap.M_C.tide = kruskal.test(M_to_C ~ Tide, data = feb_well4_neap)
+
+```
+
+```{r october shallow spring tide}
+# subset to october and shallow cluster and spring tide.regime
+oct_shallow_spring = subset(chem, Season == "October 2022" & cluster == "Shallow" & Tide.regime == "Spring" & Tide != "Mid")
+
+# test tide for all variables
+oct_shallow_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_shallow_spring)
+oct_shallow_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_shallow_spring)
+oct_shallow_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_shallow_spring)
+oct_shallow_spring.pH.tide = kruskal.test(pH ~ Tide, data = oct_shallow_spring)
+oct_shallow_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_shallow_spring)
+oct_shallow_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_shallow_spring)
+oct_shallow_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_shallow_spring)
+oct_shallow_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_shallow_spring)
+
+```
+
+```{r october shallow neap tide}
+# subset to october and shallow cluster and neap tide.regime
+oct_shallow_neap = subset(chem, Season == "October 2022" & cluster == "Shallow" & Tide.regime == "Neap" & Tide != "Mid")
+
+# test tide for all variables
+oct_shallow_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_shallow_neap)
+oct_shallow_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_shallow_neap)
+oct_shallow_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_shallow_neap)
+oct_shallow_neap.pH.tide = kruskal.test(pH ~ Tide, data = oct_shallow_neap)
+oct_shallow_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_shallow_neap)
+oct_shallow_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_shallow_neap)
+oct_shallow_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_shallow_neap)
+oct_shallow_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_shallow_neap)
+
+```
+
+```{r october intermediate spring tide}
+# subset to october and intermediate cluster and spring tide.regime
+oct_intermediate_spring = subset(chem, Season == "October 2022" & cluster == "Intermediate" & Tide.regime == "Spring" & Tide != "Mid")
+
+# test tide for all variables
+oct_intermediate_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_intermediate_spring)
+oct_intermediate_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_intermediate_spring)
+oct_intermediate_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_intermediate_spring)
+oct_intermediate_spring.pH.tide = kruskal.test(pH ~ Tide, data = oct_intermediate_spring)
+oct_intermediate_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_intermediate_spring)
+oct_intermediate_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_intermediate_spring)
+oct_intermediate_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_intermediate_spring)
+oct_intermediate_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_intermediate_spring)
+
+```
+
+```{r october intermediate neap tide}
+# subset to october and intermediate cluster and neap tide.regime
+oct_intermediate_neap = subset(chem, Season == "October 2022" & cluster == "Intermediate" & Tide.regime == "Neap" & Tide != "Mid")
+
+# test tide for all variables
+oct_intermediate_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_intermediate_neap)
+oct_intermediate_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_intermediate_neap)
+oct_intermediate_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_intermediate_neap)
+oct_intermediate_neap.pH.tide = kruskal.test(pH ~ Tide, data = oct_intermediate_neap)
+oct_intermediate_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_intermediate_neap)
+oct_intermediate_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_intermediate_neap)
+oct_intermediate_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_intermediate_neap)
+oct_intermediate_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_intermediate_neap)
+
+```
+
+```{r october deep spring tide}
+# subset to october and deep cluster and spring tide.regime
+oct_deep_spring = subset(chem, Season == "October 2022" & cluster == "Deep" & Tide.regime == "Spring" & Tide != "Mid")
+
+# test tide for all variables
+oct_deep_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_deep_spring)
+oct_deep_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_deep_spring)
+oct_deep_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_deep_spring)
+oct_deep_spring.pH.tide = kruskal.test(pH ~ Tide, data = oct_deep_spring)
+oct_deep_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_deep_spring)
+oct_deep_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_deep_spring)
+oct_deep_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_deep_spring)
+oct_deep_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_deep_spring)
+
+```
+
+```{r october deep neap tide}
+# subset to october and deep cluster and neap tide.regime
+oct_deep_neap = subset(chem, Season == "October 2022" & cluster == "Deep" & Tide.regime == "Neap" & Tide != "Mid")
+
+# test tide for all variables
+oct_deep_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_deep_neap)
+oct_deep_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_deep_neap)
+oct_deep_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_deep_neap)
+oct_deep_neap.pH.tide = kruskal.test(pH ~ Tide, data = oct_deep_neap)
+oct_deep_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_deep_neap)
+oct_deep_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_deep_neap)
+oct_deep_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_deep_neap)
+oct_deep_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_deep_neap)
+
+```
+
+```{r october well 4 spring tide}
+# subset to october and well 4 cluster and spring tide.regime
+oct_well4_spring = subset(chem, Season == "October 2022" & cluster == "Well 4" & Tide.regime == "Spring" & Tide != "Mid")
+
+# test tide for all variables
+oct_well4_spring.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_well4_spring)
+oct_well4_spring.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_well4_spring)
+oct_well4_spring.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_well4_spring)
+oct_well4_spring.pH.tide = kruskal.test(pH ~ Tide, data = oct_well4_spring)
+oct_well4_spring.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_well4_spring)
+oct_well4_spring.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_well4_spring)
+oct_well4_spring.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_well4_spring)
+oct_well4_spring.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_well4_spring)
+
+```
+
+```{r october well 4 neap tide}
+# subset to october and well 4 cluster and neap tide.regime
+oct_well4_neap = subset(chem, Season == "October 2022" & cluster == "Well 4" & Tide.regime == "Neap" & Tide != "Mid")
+
+# test tide for all variables
+oct_well4_neap.salinity.tide = kruskal.test(Salinity ~ Tide, data = oct_well4_neap)
+oct_well4_neap.temperature.tide = kruskal.test(Temperature ~ Tide, data = oct_well4_neap)
+oct_well4_neap.DO.tide = kruskal.test(DO_uM ~ Tide, data = oct_well4_neap)
+oct_well4_neap.pH.tide = kruskal.test(pH ~ Tide, data = oct_well4_neap)
+oct_well4_neap.ammonium.tide = kruskal.test(Ammonium ~ Tide, data = oct_well4_neap)
+oct_well4_neap.nitrate.tide = kruskal.test(Nitrate ~ Tide, data = oct_well4_neap)
+oct_well4_neap.nitrite.tide = kruskal.test(Nitrite ~ Tide, data = oct_well4_neap)
+oct_well4_neap.phosphate.tide = kruskal.test(Phosphate ~ Tide, data = oct_well4_neap)
+
+```
+
+```{r adjust p-values}
+# make a vector of all p-values for tide
+p_values.season.cluster.tide.regime.tide = c(feb_shallow_spring.salinity.tide$p.value, feb_shallow_spring.temperature.tide$p.value, feb_shallow_spring.DO.tide$p.value, feb_shallow_spring.pH.tide$p.value, feb_shallow_spring.ammonium.tide$p.value, feb_shallow_spring.nitrate.tide$p.value, feb_shallow_spring.nitrite.tide$p.value, feb_shallow_spring.phosphate.tide$p.value, feb_shallow_spring.cells.tide$p.value, feb_shallow_spring.DOC.tide$p.value, feb_shallow_spring.CobleA.tide$p.value, feb_shallow_spring.CobleB.tide$p.value, feb_shallow_spring.CobleC.tide$p.value, feb_shallow_spring.CobleM.tide$p.value, feb_shallow_spring.CobleT.tide$p.value, feb_shallow_spring.Fpeak.tide$p.value, feb_shallow_spring.Stedmon_D.tide$p.value, feb_shallow_spring.Optical_Brighteners.tide$p.value, feb_shallow_spring.Lignin.tide$p.value, feb_shallow_spring.HIX.tide$p.value, feb_shallow_spring.BIX.tide$p.value, feb_shallow_spring.FI.tide$p.value, feb_shallow_spring.M_C.tide$p.value, 
+             
+             feb_shallow_neap.salinity.tide$p.value, feb_shallow_neap.temperature.tide$p.value, feb_shallow_neap.DO.tide$p.value, feb_shallow_neap.pH.tide$p.value, feb_shallow_neap.ammonium.tide$p.value, feb_shallow_neap.nitrate.tide$p.value, feb_shallow_neap.nitrite.tide$p.value, feb_shallow_neap.phosphate.tide$p.value, feb_shallow_neap.cells.tide$p.value, feb_shallow_neap.DOC.tide$p.value, feb_shallow_neap.CobleA.tide$p.value, feb_shallow_neap.CobleB.tide$p.value, feb_shallow_neap.CobleC.tide$p.value, feb_shallow_neap.CobleM.tide$p.value, feb_shallow_neap.CobleT.tide$p.value, feb_shallow_neap.Fpeak.tide$p.value, feb_shallow_neap.Stedmon_D.tide$p.value, feb_shallow_neap.Optical_Brighteners.tide$p.value, feb_shallow_neap.Lignin.tide$p.value, feb_shallow_neap.HIX.tide$p.value, feb_shallow_neap.BIX.tide$p.value, feb_shallow_neap.FI.tide$p.value, feb_shallow_neap.M_C.tide$p.value, 
+             
+             feb_intermediate_spring.salinity.tide$p.value, feb_intermediate_spring.temperature.tide$p.value, feb_intermediate_spring.DO.tide$p.value, feb_intermediate_spring.pH.tide$p.value, feb_intermediate_spring.ammonium.tide$p.value, feb_intermediate_spring.nitrate.tide$p.value, feb_intermediate_spring.nitrite.tide$p.value, feb_intermediate_spring.phosphate.tide$p.value, feb_intermediate_spring.cells.tide$p.value, feb_intermediate_spring.DOC.tide$p.value, feb_intermediate_spring.CobleA.tide$p.value, feb_intermediate_spring.CobleB.tide$p.value, feb_intermediate_spring.CobleC.tide$p.value, feb_intermediate_spring.CobleM.tide$p.value, feb_intermediate_spring.CobleT.tide$p.value, feb_intermediate_spring.Fpeak.tide$p.value, feb_intermediate_spring.Stedmon_D.tide$p.value, feb_intermediate_spring.Optical_Brighteners.tide$p.value, feb_intermediate_spring.Lignin.tide$p.value, feb_intermediate_spring.HIX.tide$p.value, feb_intermediate_spring.BIX.tide$p.value, feb_intermediate_spring.FI.tide$p.value, feb_intermediate_spring.M_C.tide$p.value, 
+             
+             feb_intermediate_neap.salinity.tide$p.value, feb_intermediate_neap.temperature.tide$p.value, feb_intermediate_neap.DO.tide$p.value, feb_intermediate_neap.pH.tide$p.value, feb_intermediate_neap.ammonium.tide$p.value, feb_intermediate_neap.nitrate.tide$p.value, feb_intermediate_neap.nitrite.tide$p.value, feb_intermediate_neap.phosphate.tide$p.value, feb_intermediate_neap.cells.tide$p.value, feb_intermediate_neap.DOC.tide$p.value, feb_intermediate_neap.CobleA.tide$p.value, feb_intermediate_neap.CobleB.tide$p.value, feb_intermediate_neap.CobleC.tide$p.value, feb_intermediate_neap.CobleM.tide$p.value, feb_intermediate_neap.CobleT.tide$p.value, feb_intermediate_neap.Fpeak.tide$p.value, feb_intermediate_neap.Stedmon_D.tide$p.value, feb_intermediate_neap.Optical_Brighteners.tide$p.value, feb_intermediate_neap.Lignin.tide$p.value, feb_intermediate_neap.HIX.tide$p.value, feb_intermediate_neap.BIX.tide$p.value, feb_intermediate_neap.FI.tide$p.value, feb_intermediate_neap.M_C.tide$p.value,
+             
+             feb_deep_spring.salinity.tide$p.value, feb_deep_spring.temperature.tide$p.value, feb_deep_spring.DO.tide$p.value, feb_deep_spring.pH.tide$p.value, feb_deep_spring.ammonium.tide$p.value, feb_deep_spring.nitrate.tide$p.value, feb_deep_spring.nitrite.tide$p.value, feb_deep_spring.phosphate.tide$p.value, feb_deep_spring.cells.tide$p.value, feb_deep_spring.DOC.tide$p.value, feb_deep_spring.CobleA.tide$p.value, feb_deep_spring.CobleB.tide$p.value, feb_deep_spring.CobleC.tide$p.value, feb_deep_spring.CobleM.tide$p.value, feb_deep_spring.CobleT.tide$p.value, feb_deep_spring.Fpeak.tide$p.value, feb_deep_spring.Stedmon_D.tide$p.value, feb_deep_spring.Optical_Brighteners.tide$p.value, feb_deep_spring.Lignin.tide$p.value, feb_deep_spring.HIX.tide$p.value, feb_deep_spring.BIX.tide$p.value, feb_deep_spring.FI.tide$p.value, feb_deep_spring.M_C.tide$p.value,
+             
+             feb_deep_neap.salinity.tide$p.value, feb_deep_neap.temperature.tide$p.value, feb_deep_neap.DO.tide$p.value, feb_deep_neap.pH.tide$p.value, feb_deep_neap.ammonium.tide$p.value, feb_deep_neap.nitrate.tide$p.value, feb_deep_neap.nitrite.tide$p.value, feb_deep_neap.phosphate.tide$p.value, feb_deep_neap.cells.tide$p.value, feb_deep_neap.DOC.tide$p.value, feb_deep_neap.CobleA.tide$p.value, feb_deep_neap.CobleB.tide$p.value, feb_deep_neap.CobleC.tide$p.value, feb_deep_neap.CobleM.tide$p.value, feb_deep_neap.CobleT.tide$p.value, feb_deep_neap.Fpeak.tide$p.value, feb_deep_neap.Stedmon_D.tide$p.value, feb_deep_neap.Optical_Brighteners.tide$p.value, feb_deep_neap.Lignin.tide$p.value, feb_deep_neap.HIX.tide$p.value, feb_deep_neap.BIX.tide$p.value, feb_deep_neap.FI.tide$p.value, feb_deep_neap.M_C.tide$p.value,
+             
+             feb_well4_spring.salinity.tide$p.value, feb_well4_spring.temperature.tide$p.value, feb_well4_spring.DO.tide$p.value, feb_well4_spring.pH.tide$p.value, feb_well4_spring.ammonium.tide$p.value, feb_well4_spring.nitrate.tide$p.value, feb_well4_spring.nitrite.tide$p.value, feb_well4_spring.phosphate.tide$p.value, feb_well4_spring.cells.tide$p.value, feb_well4_spring.DOC.tide$p.value, feb_well4_spring.CobleA.tide$p.value, feb_well4_spring.CobleB.tide$p.value, feb_well4_spring.CobleC.tide$p.value, feb_well4_spring.CobleM.tide$p.value, feb_well4_spring.CobleT.tide$p.value, feb_well4_spring.Fpeak.tide$p.value, feb_well4_spring.Stedmon_D.tide$p.value, feb_well4_spring.Optical_Brighteners.tide$p.value, feb_well4_spring.Lignin.tide$p.value, feb_well4_spring.HIX.tide$p.value, feb_well4_spring.BIX.tide$p.value, feb_well4_spring.FI.tide$p.value, feb_well4_spring.M_C.tide$p.value,
+             
+             feb_well4_neap.salinity.tide$p.value, feb_well4_neap.temperature.tide$p.value, feb_well4_neap.DO.tide$p.value, feb_well4_neap.pH.tide$p.value, feb_well4_neap.ammonium.tide$p.value, feb_well4_neap.nitrate.tide$p.value, feb_well4_neap.nitrite.tide$p.value, feb_well4_neap.phosphate.tide$p.value, feb_well4_neap.cells.tide$p.value, feb_well4_neap.DOC.tide$p.value, feb_well4_neap.CobleA.tide$p.value, feb_well4_neap.CobleB.tide$p.value, feb_well4_neap.CobleC.tide$p.value, feb_well4_neap.CobleM.tide$p.value, feb_well4_neap.CobleT.tide$p.value, feb_well4_neap.Fpeak.tide$p.value, feb_well4_neap.Stedmon_D.tide$p.value, feb_well4_neap.Optical_Brighteners.tide$p.value, feb_well4_neap.Lignin.tide$p.value, feb_well4_neap.HIX.tide$p.value, feb_well4_neap.BIX.tide$p.value, feb_well4_neap.FI.tide$p.value, feb_well4_neap.M_C.tide$p.value,
+             
+             oct_shallow_spring.salinity.tide$p.value, oct_shallow_spring.temperature.tide$p.value, oct_shallow_spring.DO.tide$p.value, oct_shallow_spring.pH.tide$p.value, oct_shallow_spring.ammonium.tide$p.value, oct_shallow_spring.nitrate.tide$p.value, oct_shallow_spring.nitrite.tide$p.value, oct_shallow_spring.phosphate.tide$p.value,
+             
+             oct_shallow_neap.salinity.tide$p.value, oct_shallow_neap.temperature.tide$p.value, oct_shallow_neap.DO.tide$p.value, oct_shallow_neap.pH.tide$p.value, oct_shallow_neap.ammonium.tide$p.value, oct_shallow_neap.nitrate.tide$p.value, oct_shallow_neap.nitrite.tide$p.value, oct_shallow_neap.phosphate.tide$p.value,
+             
+             oct_intermediate_spring.salinity.tide$p.value, oct_intermediate_spring.temperature.tide$p.value, oct_intermediate_spring.DO.tide$p.value, oct_intermediate_spring.pH.tide$p.value, oct_intermediate_spring.ammonium.tide$p.value, oct_intermediate_spring.nitrate.tide$p.value, oct_intermediate_spring.nitrite.tide$p.value, oct_intermediate_spring.phosphate.tide$p.value,
+             
+             oct_intermediate_neap.salinity.tide$p.value, oct_intermediate_neap.temperature.tide$p.value, oct_intermediate_neap.DO.tide$p.value, oct_intermediate_neap.pH.tide$p.value, oct_intermediate_neap.ammonium.tide$p.value, oct_intermediate_neap.nitrate.tide$p.value, oct_intermediate_neap.nitrite.tide$p.value, oct_intermediate_neap.phosphate.tide$p.value,
+             
+             oct_deep_spring.salinity.tide$p.value, oct_deep_spring.temperature.tide$p.value, oct_deep_spring.DO.tide$p.value, oct_deep_spring.pH.tide$p.value, oct_deep_spring.ammonium.tide$p.value, oct_deep_spring.nitrate.tide$p.value, oct_deep_spring.nitrite.tide$p.value, oct_deep_spring.phosphate.tide$p.value,
+             
+             oct_deep_neap.salinity.tide$p.value, oct_deep_neap.temperature.tide$p.value, oct_deep_neap.DO.tide$p.value, oct_deep_neap.pH.tide$p.value, oct_deep_neap.ammonium.tide$p.value, oct_deep_neap.nitrate.tide$p.value, oct_deep_neap.nitrite.tide$p.value, oct_deep_neap.phosphate.tide$p.value,
+             
+             oct_well4_spring.salinity.tide$p.value, oct_well4_spring.temperature.tide$p.value, oct_well4_spring.DO.tide$p.value, oct_well4_spring.pH.tide$p.value, oct_well4_spring.ammonium.tide$p.value, oct_well4_spring.nitrate.tide$p.value, oct_well4_spring.nitrite.tide$p.value, oct_well4_spring.phosphate.tide$p.value,
+             
+             oct_well4_neap.salinity.tide$p.value, oct_well4_neap.temperature.tide$p.value, oct_well4_neap.DO.tide$p.value, oct_well4_neap.pH.tide$p.value, oct_well4_neap.ammonium.tide$p.value, oct_well4_neap.nitrate.tide$p.value, oct_well4_neap.nitrite.tide$p.value, oct_well4_neap.phosphate.tide$p.value)
+
+# adjust p-values
+p_values.season.cluster.tide.regime.tide.BH = p.adjust(p_values.season.cluster.tide.regime.tide, method = "BH")
+p_values.season.cluster.tide.regime.tide.Bonf = p.adjust(p_values.season.cluster.tide.regime.tide, method = "bonferroni")
+
+# make a data frame of all p-values
+p_values.season.cluster.tide.regime.tide.df = data.frame(p_values.season.cluster.tide.regime.tide, p_values.season.cluster.tide.regime.tide.BH, p_values.season.cluster.tide.regime.tide.Bonf)
+
+# write to csv
+write.csv(p_values.season.cluster.tide.regime.tide.df, "p_values_season_cluster_tide_regime_tide.csv", row.names = F)
+
+```
+
+
